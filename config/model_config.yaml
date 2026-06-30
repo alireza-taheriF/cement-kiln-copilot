@@ -1,0 +1,35 @@
+# ===========================================================================
+# Training configuration for cement-kiln-copilot
+# Consumed by src/ml/train.py:
+#
+#     python -m src.ml.train --config config/model_config.yaml
+#
+# These defaults train end-to-end on the bundled demo dataset
+# (data/demo_signals.csv) after it has been seeded into the database
+# (see scripts/train_demo_model.sh).
+#
+# The database connection is resolved from the DATABASE_URL environment
+# variable (see .env.example); no credentials are stored here.
+# ===========================================================================
+
+# Tag whose future value is forecast.
+target_tag: "KILN_ZONE1_TEMP"
+
+# Tags used to build predictive features. The target tag may also appear here
+# to enable autoregressive features. These must all exist in the data.
+input_tags:
+  - "KILN_ZONE1_TEMP"
+  - "KILN_ZONE2_TEMP"
+  - "KILN_FUEL_FLOW"
+
+# Lag offsets (in rows; data is assumed resampled to a regular grid).
+lags: [1, 3, 6]
+
+# Rolling-window sizes (in rows) for mean/std/min/max aggregations.
+rolling_windows: [3, 6]
+
+# Forecast horizon (in rows): y[t] = target[t + horizon].
+horizon: 3
+
+# Destination path for the persisted model artifact.
+model_output_path: "artifacts/models/kiln_zone1_temp_model.joblib"

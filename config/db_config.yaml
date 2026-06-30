@@ -1,0 +1,28 @@
+# ===========================================================================
+# Database configuration for cement-kiln-copilot
+# Consumed by src/db/models.py (session/engine setup).
+#
+# NOTE: Secrets should come from environment variables (.env), not this file.
+#       Values below are non-secret defaults / structural settings.
+# ===========================================================================
+
+database:
+  # If DATABASE_URL env var is set, it takes precedence over these components.
+  dialect: postgresql
+  driver: psycopg2
+  host: ${POSTGRES_HOST:-localhost}
+  port: ${POSTGRES_PORT:-5432}
+  name: ${POSTGRES_DB:-cement_copilot}
+  user: ${POSTGRES_USER:-copilot}
+  password: ${POSTGRES_PASSWORD:-copilot}
+
+# SQLAlchemy engine options.
+engine:
+  echo: false
+  pool_size: 5
+  max_overflow: 10
+  pool_pre_ping: true
+
+# Local development fallback (used when APP_ENV=development and no Postgres).
+development:
+  sqlite_url: sqlite:///./cement_copilot_dev.db
