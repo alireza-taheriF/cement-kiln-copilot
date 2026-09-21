@@ -5,6 +5,9 @@ ingests plant time-series and lab data, trains ML models to predict key process
 quality/efficiency targets, and serves real-time advisory **recommendations**
 (setpoint nudges) through a REST API and an operator-facing dashboard.
 
+> **مستند کامل فارسی** (معماری، راه‌اندازی، محدودیت‌ها، قیمت‌گذاری در ایران و نحوهٔ فروش):
+> [`docs/DOCUMENTATION_FA.md`](docs/DOCUMENTATION_FA.md)
+
 ---
 
 ## Project Goal
