@@ -9,7 +9,9 @@ psycopg2-binary
 pydantic
 streamlit
 requests
+httpx
 python-dotenv
 pyyaml
 joblib
 mlflow>=2.14,<3
+pytest

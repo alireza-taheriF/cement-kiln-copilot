@@ -1,0 +1,9 @@
+{
+  "metric": "valid_rmse",
+  "value": 2.3600270120946925,
+  "tolerance": 0.15,
+  "tolerance_type": "relative",
+  "direction": "lower_is_better",
+  "dataset": "data/demo_signals.csv",
+  "config": "config/model_config.yaml"
+}

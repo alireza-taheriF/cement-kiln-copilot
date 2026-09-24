@@ -426,7 +426,9 @@ That compares held-out RMSE (`valid_rmse`) to
 [`tests/baselines/demo_metrics.json`](tests/baselines/demo_metrics.json). The
 job fails when the new score is worse than the committed `value` by more than
 the `tolerance` in that file (relative or absolute, `direction` is
-lower-is-better). A better score passes.
+lower-is-better). A better score passes. The checked-in baseline uses a
+relative tolerance of `0.15` so small machine-to-machine differences on the
+16-row demo validation window do not fail the job.
 
 Refresh the committed value after an intentional demo-metric change, from the
 repository root and after a demo training run:
