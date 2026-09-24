@@ -1,0 +1,19 @@
+# Non-secret runtime configuration.
+# DATABASE_URL is not here; it lives in the Secret example.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cement-copilot-config
+  labels:
+    app: cement-copilot
+data:
+  APP_ENV: "development"
+  LOG_LEVEL: "INFO"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  # Artifact path inside the API container. Mount the trained joblib file here.
+  MODEL_PATH: "/models/kiln_zone1_temp_model.joblib"
+  MODEL_CONFIG_PATH: "config/model_config.yaml"
+  # In-cluster MLflow tracking server. The API still loads MODEL_PATH unless
+  # MODEL_URI is set (for example models:/cement-kiln-kpi/Production).
+  MLFLOW_TRACKING_URI: "http://cement-copilot-mlflow:5000"

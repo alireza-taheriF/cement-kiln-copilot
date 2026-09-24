@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -28,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from src.db.models import Signal, Tag, get_engine, get_session_factory
 from src.ml.evaluate import evaluate_regressor, train_valid_split_time_series
+from src.ml.feature_stats import compute_feature_stats, feature_stats_path, write_feature_stats
 from src.ml.features import make_supervised_dataset
 from src.ml.models import EnergyKPIModel
 
@@ -100,6 +102,28 @@ def load_signals_from_db(
     return df
 
 
+def _training_config(
+    target_tag: str,
+    input_tags: List[str],
+    lags: List[int],
+    rolling_windows: List[int],
+    horizon: int,
+    model_output_path: str,
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """YAML config when the caller has it, otherwise the trainer arguments."""
+    if config is not None:
+        return dict(config)
+    return {
+        "target_tag": target_tag,
+        "input_tags": list(input_tags),
+        "lags": list(lags),
+        "rolling_windows": list(rolling_windows),
+        "horizon": horizon,
+        "model_output_path": model_output_path,
+    }
+
+
 def train_energy_model(
     session: Session,
     target_tag: str,
@@ -108,6 +132,7 @@ def train_energy_model(
     rolling_windows: List[int],
     horizon: int,
     model_output_path: str,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Train and persist an :class:`EnergyKPIModel` for a single KPI tag.
 
@@ -128,6 +153,10 @@ def train_energy_model(
         Forecast horizon (rows).
     model_output_path:
         Destination path for the persisted model artifact.
+    config:
+        Optional full YAML configuration. When provided, it is logged to
+        MLflow as run parameters. When omitted, the explicit trainer arguments
+        are logged instead.
 
     Returns
     -------
@@ -178,8 +207,21 @@ def train_energy_model(
     train_metrics = evaluate_regressor(model, X_train, y_train)
     valid_metrics = evaluate_regressor(model, X_valid, y_valid)
 
+    stats = compute_feature_stats(X_train)
+    model.metadata["feature_stats"] = stats
     model.save(model_output_path)
+    stats_path = feature_stats_path(model_output_path)
+    write_feature_stats(stats_path, stats)
 
+    logged_config = _training_config(
+        target_tag,
+        input_tags,
+        lags,
+        rolling_windows,
+        horizon,
+        model_output_path,
+        config,
+    )
     summary: Dict[str, Any] = {
         "target_tag": target_tag,
         "n_total_samples": int(len(X)),
@@ -189,8 +231,25 @@ def train_energy_model(
         "train_metrics": train_metrics,
         "valid_metrics": valid_metrics,
         "model_output_path": model_output_path,
+        "feature_stats_path": str(stats_path),
         "model_backend": model.metadata.get("model_backend"),
     }
+
+    # Import lazily so loading this module does not require a tracking call.
+    from src.ml.tracking import log_training_run
+
+    summary["mlflow_run_id"] = log_training_run(
+        logged_config,
+        summary,
+        model_output_path,
+        str(stats_path),
+    )
+    summary_path = Path(model_output_path).parent / "training_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(
+        json.dumps(summary, indent=2, default=str),
+        encoding="utf-8",
+    )
     logger.info("Training complete: %s", summary)
     return summary
 
@@ -261,6 +320,7 @@ def main() -> None:
             rolling_windows=list(cfg["rolling_windows"]),
             horizon=int(cfg["horizon"]),
             model_output_path=cfg["model_output_path"],
+            config=cfg,
         )
     finally:
         session.close()

@@ -1,0 +1,18 @@
+# PersistentVolumeClaim for the MLflow tracking server's mlruns directory.
+# For a local kind or minikube cluster only. This is not a production artifact
+# store: use a managed database and object storage (S3, GCS, or Azure Blob)
+# outside a laptop cluster. The default StorageClass of the local cluster is used.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cement-copilot-mlruns
+  labels:
+    app: cement-copilot-mlflow
+  annotations:
+    cement-kiln-copilot/storage: local-kind-only
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

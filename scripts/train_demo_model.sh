@@ -57,6 +57,7 @@ finally:
 PY
 
 echo "[train_demo_model] Training model with ${CONFIG_PATH} ..."
+echo "[train_demo_model] MLflow file store: ${MLFLOW_TRACKING_URI:-./mlruns} (registry model: cement-kiln-kpi)"
 python -m src.ml.train --config "${CONFIG_PATH}"
 
 MODEL_PATH_DEFAULT="artifacts/models/kiln_zone1_temp_model.joblib"

@@ -11,7 +11,8 @@ import logging
 
 from fastapi import FastAPI
 
-from src.api.routers import health, prediction, recommendation
+from src.api.routers import health, monitoring, prediction, recommendation
+from src.db.models import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,14 +30,22 @@ def create_app() -> FastAPI:
 
     # Routers ---------------------------------------------------------------
     app.include_router(health.router, tags=["health"])
+    app.include_router(monitoring.metrics_router, tags=["monitoring"])
     app.include_router(prediction.router, prefix=f"/{API_VERSION}", tags=["prediction"])
     app.include_router(
         recommendation.router, prefix=f"/{API_VERSION}", tags=["recommendation"]
+    )
+    app.include_router(
+        monitoring.monitor_router, prefix=f"/{API_VERSION}", tags=["monitoring"]
     )
 
     @app.on_event("startup")
     async def _startup() -> None:
         logger.info("Cement Kiln Copilot API starting up.")
+        try:
+            init_db()
+        except Exception:
+            logger.exception("Could not initialize the database on startup.")
 
     @app.get("/")
     async def root() -> dict[str, str]:

@@ -1,0 +1,19 @@
+# Operator dashboard only. Kept separate from the FastAPI image and
+# installs the smaller Streamlit dependency set.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
+
+RUN pip install --no-cache-dir streamlit requests numpy pandas
+
+COPY src/dashboard/app_streamlit.py /app/src/dashboard/app_streamlit.py
+
+EXPOSE 8501
+
+# API_BASE_URL is injected at run time (Kubernetes Service or docker -e).
+CMD ["streamlit", "run", "src/dashboard/app_streamlit.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]

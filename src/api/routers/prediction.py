@@ -6,7 +6,9 @@ trained :class:`~src.ml.models.EnergyKPIModel`, runs real inference, and
 returns the resulting KPI forecasts.
 
 The trained model artifact is located via the ``MODEL_PATH`` environment
-variable and cached in module memory after first load.
+variable and cached in module memory after first load. When ``MODEL_URI`` is
+set (for example ``models:/cement-kiln-kpi/Production``), that registry URI is
+loaded through MLflow instead and ``MODEL_PATH`` is not consulted.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -22,6 +25,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.api.monitoring import PREDICT_ROUTE, record_inference
 from src.ml.features import create_lag_features, create_rolling_features, pivot_signals
 from src.ml.models import EnergyKPIModel
 
@@ -120,7 +124,10 @@ def build_long_dataframe(request: PredictionRequest) -> pd.DataFrame:
 
 
 def load_prediction_model() -> EnergyKPIModel:
-    """Load (and cache) the trained model artifact referenced by ``MODEL_PATH``.
+    """Load (and cache) the model from ``MODEL_URI`` or ``MODEL_PATH``.
+
+    ``MODEL_URI`` is optional. When it is unset or blank, the artifact is
+    loaded from ``MODEL_PATH`` exactly as before.
 
     Returns
     -------
@@ -130,10 +137,28 @@ def load_prediction_model() -> EnergyKPIModel:
     Raises
     ------
     RuntimeError
-        If ``MODEL_PATH`` is unset/empty, or the referenced file does not
-        exist.
+        If ``MODEL_URI`` is set but cannot be loaded, or if it is unset and
+        ``MODEL_PATH`` is missing or the referenced file does not exist.
     """
     global _CACHED_MODEL, _CACHED_PATH
+
+    model_uri = (os.getenv("MODEL_URI") or "").strip()
+    if model_uri:
+        cache_key = f"mlflow:{model_uri}"
+        if _CACHED_MODEL is not None and _CACHED_PATH == cache_key:
+            return _CACHED_MODEL
+        from src.ml.tracking import load_energy_model_from_uri
+
+        try:
+            model = load_energy_model_from_uri(model_uri)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to load model from MODEL_URI={model_uri!r}: {exc}"
+            ) from exc
+        _CACHED_MODEL = model
+        _CACHED_PATH = cache_key
+        logger.info("Loaded prediction model from MODEL_URI=%s", model_uri)
+        return model
 
     model_path = os.getenv("MODEL_PATH")
     if not model_path:
@@ -280,6 +305,8 @@ def make_prediction_features(
 async def predict_energy_kpi(request: PredictionRequest) -> PredictionResponse:
     """Run real inference for an energy/KPI forecasting model.
 
+    A successful call is logged for monitoring. The JSON body is unchanged.
+
     Returns
     -------
     PredictionResponse
@@ -292,6 +319,7 @@ async def predict_energy_kpi(request: PredictionRequest) -> PredictionResponse:
         artifact/environment misconfiguration. (``422`` is raised
         automatically by FastAPI for malformed request bodies.)
     """
+    started = time.perf_counter()
     try:
         model = load_prediction_model()
     except RuntimeError as exc:
@@ -310,10 +338,18 @@ async def predict_energy_kpi(request: PredictionRequest) -> PredictionResponse:
 
     backend = model.metadata.get("model_backend") or model.model_name
     version = model.metadata.get("trained_at")
-    return PredictionResponse(
+    response = PredictionResponse(
         predictions=[float(p) for p in predictions],
         target_name=str(model.target_name),
         model_backend=str(backend),
         model_version=version,
         n_rows=len(predictions),
     )
+    record_inference(
+        route=PREDICT_ROUTE,
+        started=started,
+        model_version=version,
+        signals=request.signals,
+        feature_frame=X,
+    )
+    return response

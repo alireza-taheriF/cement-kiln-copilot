@@ -14,7 +14,13 @@ htmlcov/
 
 # Local dev artifacts
 *.db
+*.sqlite
+*.sqlite3
+mlruns/
 artifacts/models/
+
+# Local cluster secret copied from deploy/k8s/secret.example.yaml
+deploy/k8s/secret.yaml
 
 # OS / editor
 .DS_Store

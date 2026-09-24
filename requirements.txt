@@ -12,3 +12,4 @@ requests
 python-dotenv
 pyyaml
 joblib
+mlflow>=2.14,<3

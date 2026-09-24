@@ -1,0 +1,38 @@
+# Local environments and secrets. Never send these to the image build.
+.venv
+venv
+.env
+.env.*
+!.env.example
+
+# MLflow file store and local SQLite databases.
+mlruns
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+
+# VCS, caches, and editor files.
+.git
+.github
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.py[cod]
+.coverage
+htmlcov
+.DS_Store
+.idea
+.vscode
+.qodo
+
+# Not needed in the API or dashboard image.
+artifacts
+notebooks
+docs
+tests
+deploy
+*.md

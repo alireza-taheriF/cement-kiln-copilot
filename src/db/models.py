@@ -4,9 +4,10 @@ Defines the production persistence schema for cement-process optimization.
 
 The schema follows a normalized, tag-centric time-series design:
 
-* :class:`Tag`        - metadata describing a single measured/derived signal.
-* :class:`Signal`     - the time-series fact table (one value per tag per ts).
-* :class:`LabResult`  - laboratory quality-control measurements.
+* :class:`Tag`             - metadata describing a single measured/derived signal.
+* :class:`Signal`          - the time-series fact table (one value per tag per ts).
+* :class:`LabResult`       - laboratory quality-control measurements.
+* :class:`InferenceEvent`  - one row per successful advisory API call.
 
 The database URL is resolved from the ``DATABASE_URL`` environment variable,
 falling back to a local SQLite database for development.
@@ -114,6 +115,36 @@ class LabResult(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<LabResult id={self.id} parameter={self.parameter!r} ts={self.ts}>"
+
+
+class InferenceEvent(Base):
+    """One successful advisory API call (predict or recommend).
+
+    ``input_hash`` is a SHA-256 of the numeric request payload.
+    ``feature_means_json`` stores the per-feature mean of that call so drift
+    monitoring can score the last N predictions without changing the
+    predict/recommend response schema.
+    """
+
+    __tablename__ = "inference_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, index=True)
+    route = Column(String(128), nullable=False, index=True)
+    latency_ms = Column(Float, nullable=False)
+    model_version = Column(String(128), nullable=True)
+    input_hash = Column(String(64), nullable=False)
+    feature_means_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_inference_events_route_id", "route", "id"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return (
+            f"<InferenceEvent id={self.id} route={self.route!r} "
+            f"latency_ms={self.latency_ms}>"
+        )
 
 
 # ---------------------------------------------------------------------------

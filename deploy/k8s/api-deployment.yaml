@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cement-copilot-api
+  labels:
+    app: cement-copilot-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cement-copilot-api
+  template:
+    metadata:
+      labels:
+        app: cement-copilot-api
+    spec:
+      containers:
+        - name: api
+          image: cement-kiln-copilot-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: cement-copilot-config
+            - secretRef:
+                name: cement-copilot-db
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: model
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+      volumes:
+        # Replace emptyDir with a volume that contains the trained joblib
+        # artifact named by MODEL_PATH. /health does not load the model.
+        - name: model
+          emptyDir: {}

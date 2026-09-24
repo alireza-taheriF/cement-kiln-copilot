@@ -1,0 +1,62 @@
+# MLflow tracking server with a SQLite backend and file artifacts on the PVC.
+# The PVC is for a local kind/minikube cluster, not a production store.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cement-copilot-mlflow
+  labels:
+    app: cement-copilot-mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cement-copilot-mlflow
+  template:
+    metadata:
+      labels:
+        app: cement-copilot-mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v2.22.0
+          imagePullPolicy: IfNotPresent
+          # `command` replaces the image entrypoint so the server argv is explicit.
+          command:
+            - mlflow
+            - server
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5000"
+            - --backend-store-uri
+            - sqlite:////mlflow/mlflow.db
+            - --default-artifact-root
+            - /mlflow/mlruns
+          ports:
+            - name: http
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: mlruns
+              mountPath: /mlflow
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+      volumes:
+        - name: mlruns
+          persistentVolumeClaim:
+            claimName: cement-copilot-mlruns

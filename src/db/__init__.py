@@ -2,6 +2,7 @@
 
 from .models import (
     Base,
+    InferenceEvent,
     LabResult,
     Signal,
     Tag,
@@ -15,6 +16,7 @@ __all__ = [
     "Tag",
     "Signal",
     "LabResult",
+    "InferenceEvent",
     "get_engine",
     "get_session_factory",
     "init_db",

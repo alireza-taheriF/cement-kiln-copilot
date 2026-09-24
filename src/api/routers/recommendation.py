@@ -11,6 +11,7 @@ guarantee identical inference semantics.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -18,6 +19,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.api.monitoring import RECOMMEND_ROUTE, record_inference
 from src.api.routers.prediction import (
     build_long_dataframe,
     load_prediction_model,
@@ -132,6 +134,7 @@ async def recommend_setpoints_endpoint(
         artifact/environment misconfiguration. (``422`` is raised
         automatically for malformed request bodies.)
     """
+    started = time.perf_counter()
     try:
         model = load_prediction_model()
     except RuntimeError as exc:
@@ -180,7 +183,7 @@ async def recommend_setpoints_endpoint(
     items = [RecommendationItem(**item) for item in ranked]
     backend = model.metadata.get("model_backend") or model.model_name
     version = model.metadata.get("trained_at")
-    return RecommendationResponse(
+    response = RecommendationResponse(
         target_name=str(model.target_name),
         desired_target=request.desired_target,
         baseline_prediction_mean=baseline_mean,
@@ -189,3 +192,17 @@ async def recommend_setpoints_endpoint(
         model_version=version,
         n_candidates_evaluated=n_candidates,
     )
+    record_inference(
+        route=RECOMMEND_ROUTE,
+        started=started,
+        model_version=version,
+        signals=request.signals,
+        feature_frame=baseline_X,
+        extra={
+            "current_setpoints": {
+                key: float(value) for key, value in request.current_setpoints.items()
+            },
+            "desired_target": float(request.desired_target),
+        },
+    )
+    return response

@@ -7,6 +7,7 @@ current endpoint contracts:
 * ``GET  /``                       - service/version banner
 * ``POST /v1/predict/energy-kpi``  - KPI forecasting
 * ``POST /v1/recommend/setpoints`` - model-based setpoint recommendations
+* ``GET  /v1/monitor/drift``       - feature z-scores versus training stats
 
 Run with::
 
@@ -35,6 +36,7 @@ import streamlit as st
 DEFAULT_API_BASE_URL = "http://localhost:8000"
 PREDICT_PATH = "/v1/predict/energy-kpi"
 RECOMMEND_PATH = "/v1/recommend/setpoints"
+DRIFT_PATH = "/v1/monitor/drift"
 REQUEST_TIMEOUT_SECONDS = 15
 
 # Tags the synthetic generator understands, with realistic baselines.
@@ -74,7 +76,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
             "۲. **بارگذاری سناریوی دمو (همهٔ تگ‌ها)** را بزنید.\n"
             "۳. **اجرای پیش‌بینی KPI** را بزنید تا هدف پیش‌بینی شود.\n"
             "۴. یک **مقدار هدف** تعیین و **تگ‌های قابل تنظیم** را انتخاب کنید.\n"
-            "۵. **اجرای توصیه** را بزنید و بهترین گزینه و امتیاز را ببینید.\n\n"
+            "۵. **اجرای توصیه** را بزنید و بهترین گزینه و امتیاز را ببینید.\n"
+            "۶. پنل **پایش رانش** را ببینید: z-score ویژگی‌ها نسبت به آموزش.\n\n"
             "_فقط مشورتی: سامانه ست‌پوینت پیشنهاد می‌دهد و تجهیزات را فرمان نمی‌دهد._"
         ),
         "backend_connection": "اتصال بک‌اند",
@@ -134,6 +137,14 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
             "است. ردیف بالا بهترین گزینه است."
         ),
         "raw_recommendation": "پاسخ خام توصیه",
+        "drift_title": "پایش رانش",
+        "drift_max_z": "بیشینه |z|",
+        "drift_caption": "{n} پیش‌بینی اخیر در برابر آمار آموزش. فقط مشورتی.",
+        "drift_hint": "برای دیدن z-score، وضعیت بک‌اند را بررسی کنید.",
+        "drift_unavailable": "وضعیت رانش در دسترس نیست.",
+        "drift_empty": "هنوز پیش‌بینی‌ای برای مقایسه ثبت نشده است.",
+        "drift_features": "z-score ویژگی‌ها",
+        "drift_inline": "رانش: بیشینه |z| = {z} روی {n} پیش‌بینی اخیر.",
     },
     "en": {
         "lang_label": "🌐 Language / زبان",
@@ -145,7 +156,8 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
             "2. **Load demo scenario (all tags)** in the sidebar.\n"
             "3. **Run KPI Prediction** to forecast the target.\n"
             "4. Set a **desired target** and pick **adjustable tags**.\n"
-            "5. **Run Recommendation** and read the best candidate + score.\n\n"
+            "5. **Run Recommendation** and read the best candidate + score.\n"
+            "6. Read the **drift status** panel: feature z-scores versus training.\n\n"
             "_Advisory only: the system suggests setpoints; it does not actuate "
             "equipment._"
         ),
@@ -206,6 +218,14 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
             "target. The top row is the best candidate."
         ),
         "raw_recommendation": "Raw recommendation response",
+        "drift_title": "Drift status",
+        "drift_max_z": "Max |z|",
+        "drift_caption": "Last {n} predictions vs training feature stats. Advisory only.",
+        "drift_hint": "Check backend status to load feature z-scores.",
+        "drift_unavailable": "Drift status is unavailable.",
+        "drift_empty": "No predictions have been logged yet.",
+        "drift_features": "Per-feature z-scores",
+        "drift_inline": "Drift: max |z| = {z} over the last {n} predictions.",
     },
 }
 
@@ -345,6 +365,11 @@ def call_prediction_api(base_url: str, payload: Dict[str, Any]) -> ApiResult:
 def call_recommendation_api(base_url: str, payload: Dict[str, Any]) -> ApiResult:
     """Call ``POST /v1/recommend/setpoints`` with a recommendation payload."""
     return _request("POST", f"{base_url}{RECOMMEND_PATH}", payload=payload)
+
+
+def call_drift(base_url: str, n: int = 20) -> ApiResult:
+    """Call ``GET /v1/monitor/drift`` for the feature z-score panel."""
+    return _request("GET", f"{base_url}{DRIFT_PATH}?n={n}")
 
 
 # --------------------------------------------------------------------------- #
@@ -545,6 +570,40 @@ def render_recommendation_results(data: Dict[str, Any]) -> None:
 # --------------------------------------------------------------------------- #
 # Sidebar
 # --------------------------------------------------------------------------- #
+def _render_drift_panel() -> None:
+    """Small advisory panel: recent prediction inputs versus training stats."""
+    st.subheader(t("drift_title"))
+    result: Optional[ApiResult] = st.session_state.get("drift_result")
+    if result is None:
+        st.caption(t("drift_hint"))
+        return
+    if not result.ok or not isinstance(result.data, dict):
+        st.warning(result.error or t("drift_unavailable"))
+        return
+
+    data = result.data
+    n_rows = int(data.get("n") or 0)
+    max_abs = data.get("max_abs_z")
+    if isinstance(max_abs, (int, float)):
+        st.metric(t("drift_max_z"), f"{float(max_abs):.3f}")
+    st.caption(t("drift_caption", n=n_rows))
+    if n_rows == 0:
+        st.caption(t("drift_empty"))
+        return
+
+    features = data.get("features") or {}
+    if not isinstance(features, dict) or not features:
+        return
+    ranked = sorted(features.items(), key=lambda item: abs(float(item[1])), reverse=True)[:8]
+    with st.expander(t("drift_features")):
+        st.dataframe(
+            pd.DataFrame(
+                [{"feature": name, "z": float(score)} for name, score in ranked]
+            ),
+            use_container_width=True,
+        )
+
+
 def _render_status_badge(label: str, result: ApiResult) -> None:
     """Render a success/failure badge for a backend check."""
     if result.ok:
@@ -567,6 +626,7 @@ def _render_sidebar() -> str:
         if st.button(t("check_status"), use_container_width=True):
             st.session_state["health_result"] = call_health(base_url)
             st.session_state["root_result"] = call_root(base_url)
+            st.session_state["drift_result"] = call_drift(base_url)
 
         health_result: Optional[ApiResult] = st.session_state.get("health_result")
         root_result: Optional[ApiResult] = st.session_state.get("root_result")
@@ -584,6 +644,8 @@ def _render_sidebar() -> str:
             else:
                 _render_status_badge(t("root"), root_result)
 
+        st.divider()
+        _render_drift_panel()
         st.divider()
         st.header(t("sample_data"))
         n_rows = int(st.number_input(t("rows"), min_value=2, max_value=2000, value=60))
@@ -677,6 +739,18 @@ def _render_prediction_panel(base_url: str, payload: Dict[str, Any]) -> None:
         result = call_prediction_api(base_url, payload)
         if result.ok and isinstance(result.data, dict):
             render_prediction_results(result.data)
+            drift = call_drift(base_url)
+            st.session_state["drift_result"] = drift
+            if drift.ok and isinstance(drift.data, dict):
+                max_abs = drift.data.get("max_abs_z")
+                if isinstance(max_abs, (int, float)):
+                    st.caption(
+                        t(
+                            "drift_inline",
+                            z=f"{float(max_abs):.3f}",
+                            n=int(drift.data.get("n") or 0),
+                        )
+                    )
         else:
             st.error(result.error or t("prediction_failed"))
 

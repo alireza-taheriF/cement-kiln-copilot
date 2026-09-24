@@ -25,10 +25,11 @@ _HORIZON = 1
 
 
 @pytest.fixture(autouse=True)
-def _reset_model_cache():
+def _reset_model_cache(monkeypatch):
     """Ensure each test starts with a clean module-level model cache."""
     prediction_module._CACHED_MODEL = None
     prediction_module._CACHED_PATH = None
+    monkeypatch.delenv("MODEL_URI", raising=False)
     yield
     prediction_module._CACHED_MODEL = None
     prediction_module._CACHED_PATH = None
