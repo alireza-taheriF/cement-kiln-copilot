@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import mlflow
+import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
 from mlflow.tracking import MlflowClient
@@ -81,6 +82,12 @@ def test_tiny_train_creates_mlflow_run(tmp_path, monkeypatch):
     assert "target_tag" in latest.data.params
     assert "valid_rmse" in latest.data.metrics
     assert "train_rmse" in latest.data.metrics
+    assert "persistence_rmse" in latest.data.metrics
+    assert "linear_regression_rmse" in latest.data.metrics
+    assert "model_valid_rmse" in latest.data.metrics
+    assert latest.data.metrics["model_valid_rmse"] == pytest.approx(
+        latest.data.metrics["valid_rmse"]
+    )
     artifact_names = [
         item.path for item in tracking_client.list_artifacts(latest.info.run_id)
     ]
