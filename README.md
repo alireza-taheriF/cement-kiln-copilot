@@ -5,7 +5,7 @@ ingests plant time-series and lab data, trains ML models to predict key process
 quality/efficiency targets, and serves real-time advisory **recommendations**
 (setpoint nudges) through a REST API and an operator-facing dashboard.
 
-> **مستند کامل فارسی** (معماری، راه‌اندازی، محدودیت‌ها، قیمت‌گذاری در ایران و نحوهٔ فروش):
+> **مستند فارسی** (معماری، راه‌اندازی و محدودیت‌ها):
 > [`docs/DOCUMENTATION_FA.md`](docs/DOCUMENTATION_FA.md)
 
 ---
@@ -262,22 +262,6 @@ shortcut; every recommendation is model-scored.
 | `400` "No rows remain after building ... features" | The input window is shorter than the largest lag/rolling window. Increase the number of rows (use the demo scenario, or raise **Rows** in the sidebar). |
 | `400` "missing required base tag" | The request is missing a tag the model needs. Include all of `KILN_ZONE1_TEMP`, `KILN_ZONE2_TEMP`, `KILN_FUEL_FLOW` (the demo scenario does this). |
 | `422` validation error | Malformed payload: need ≥ 2 timestamps, every signal array the same length as `timestamps`, non-empty `current_setpoints`, and each adjustable tag present in `current_setpoints`. |
-
----
-
-## Factory outreach kit
-
-Sales-ready materials for contacting cement plants, industrial partners, and
-accelerators. All documents are advisory-only in positioning and designed to
-be customized per plant.
-
-| Document | Purpose |
-| -------- | ------- |
-| [`docs/factory_one_pager.md`](docs/factory_one_pager.md) | One-page product summary for email attachments and intro meetings |
-| [`docs/factory_outreach_email.md`](docs/factory_outreach_email.md) | Cold, warm, and accelerator email templates |
-| [`docs/factory_meeting_script.md`](docs/factory_meeting_script.md) | 10-minute demo meeting script (English + Persian summary) |
-| [`docs/factory_discovery_questions.md`](docs/factory_discovery_questions.md) | First-meeting discovery checklist |
-| [`docs/factory_poc_proposal.md`](docs/factory_poc_proposal.md) | Editable 4–8 week PoC proposal template |
 
 ---
 
