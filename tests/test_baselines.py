@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 from sklearn.linear_model import LinearRegression
 
+from src.data_ingest.loader import save_signals_to_db
+from src.db.models import get_engine, get_session_factory, init_db
 from src.ml.baselines import (
     evaluate_naive_baselines,
     fit_linear_regression,
@@ -15,6 +17,7 @@ from src.ml.baselines import (
 )
 from src.ml.evaluate import regression_metrics, train_valid_split_time_series
 from src.ml.features import make_supervised_dataset, pivot_signals
+from src.ml.train import train_energy_model
 
 
 def _tiny_signals(periods: int = 16) -> pd.DataFrame:
@@ -103,6 +106,94 @@ def test_persistence_score_ignores_future_labels():
     assert report_a["model_valid_rmse"] == 1.25
     assert not np.allclose(expected_pred, y_valid.to_numpy())
     assert report_a["persistence"]["rmse"] != 0.0
+
+
+def _supervised_without_target_as_feature(signals: pd.DataFrame):
+    """Features from fuel only, so a missing target origin can stay in X."""
+    return make_supervised_dataset(
+        signals,
+        target_tag="KILN_ZONE1_TEMP",
+        input_tags=["KILN_FUEL_FLOW"],
+        lags=[1],
+        rolling_windows=[3],
+        horizon=2,
+    )
+
+
+def test_missing_training_origin_observation_still_scores_validation(tmp_path):
+    """A hole at a training origin must not block validation persistence."""
+    signals = _tiny_signals(periods=40)
+    X, y = _supervised_without_target_as_feature(signals)
+    X_train, X_valid, _, _ = train_valid_split_time_series(X, y, valid_fraction=0.2)
+    train_origin = X_train.index[5]
+    assert train_origin not in X_valid.index
+
+    broken = signals.loc[
+        ~(
+            (signals["tag_name"] == "KILN_ZONE1_TEMP")
+            & (signals["timestamp"] == train_origin)
+        )
+    ].copy()
+    X_broken, y_broken = _supervised_without_target_as_feature(broken)
+    X_train, X_valid, y_train, y_valid = train_valid_split_time_series(
+        X_broken, y_broken, valid_fraction=0.2
+    )
+    assert train_origin in X_train.index
+    assert train_origin not in X_valid.index
+
+    with pytest.raises(ValueError, match="future"):
+        last_observed_target(broken, "KILN_ZONE1_TEMP", X_broken.index)
+
+    observed_valid = last_observed_target(broken, "KILN_ZONE1_TEMP", X_valid.index)
+    assert observed_valid.index.equals(X_valid.index)
+    assert not observed_valid.isna().any()
+    report = evaluate_naive_baselines(
+        X_train,
+        y_train,
+        X_valid,
+        y_valid,
+        observed_valid,
+        model_valid_rmse=1.5,
+    )
+    assert report["n_samples"] == len(X_valid)
+    assert report["persistence"]["n_samples"] == len(X_valid)
+    assert report["linear_regression"]["n_samples"] == len(X_valid)
+    assert np.isfinite(report["persistence"]["rmse"])
+    assert report["model_valid_rmse"] == 1.5
+
+    valid_origin = X_valid.index[0]
+    missing_valid = signals.loc[
+        ~(
+            (signals["tag_name"] == "KILN_ZONE1_TEMP")
+            & (signals["timestamp"] == valid_origin)
+        )
+    ].copy()
+    with pytest.raises(ValueError, match="future"):
+        last_observed_target(missing_valid, "KILN_ZONE1_TEMP", X_valid.index)
+
+    engine = get_engine("sqlite:///:memory:")
+    init_db(engine)
+    session = get_session_factory(engine)()
+    try:
+        save_signals_to_db(broken, session)
+        summary = train_energy_model(
+            session,
+            target_tag="KILN_ZONE1_TEMP",
+            input_tags=["KILN_FUEL_FLOW"],
+            lags=[1],
+            rolling_windows=[3],
+            horizon=2,
+            model_output_path=str(tmp_path / "model.joblib"),
+        )
+    finally:
+        session.close()
+
+    comparison = summary["baseline_comparison"]
+    assert comparison["n_samples"] == summary["n_valid_samples"]
+    assert comparison["n_samples"] > 0
+    assert comparison["model_valid_rmse"] == summary["valid_metrics"]["rmse"]
+    assert np.isfinite(comparison["persistence"]["rmse"])
+    assert np.isfinite(comparison["linear_regression"]["rmse"])
 
 
 def test_linear_regression_fits_training_rows_only():

@@ -209,9 +209,10 @@ def train_energy_model(
     train_metrics = evaluate_regressor(model, X_train, y_train)
     valid_metrics = evaluate_regressor(model, X_valid, y_valid)
 
-    # Same chronological rows as valid_metrics. Persistence uses the target
-    # measurement at each forecast origin, not the future label.
-    y_observed = last_observed_target(signals, target_tag, X.index)
+    # Persistence is scored only on validation origins. A missing target
+    # measurement at a training origin is not needed and must not fail the run.
+    # Validation origins must still be complete; they are not filled from later rows.
+    y_observed = last_observed_target(signals, target_tag, X_valid.index)
     baseline_comparison = evaluate_naive_baselines(
         X_train,
         y_train,
