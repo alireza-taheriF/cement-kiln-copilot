@@ -8,6 +8,7 @@ production-grade trainer:
 * perform a chronological train/validation split,
 * fit an :class:`~src.ml.models.EnergyKPIModel`,
 * evaluate on both splits,
+* score persistence and linear-regression baselines on that same validation split,
 * persist the model artifact and return a structured training summary.
 
 Run it as a module::
@@ -28,6 +29,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from src.db.models import Signal, Tag, get_engine, get_session_factory
+from src.ml.baselines import evaluate_naive_baselines, last_observed_target
 from src.ml.evaluate import evaluate_regressor, train_valid_split_time_series
 from src.ml.feature_stats import compute_feature_stats, feature_stats_path, write_feature_stats
 from src.ml.features import make_supervised_dataset
@@ -207,6 +209,26 @@ def train_energy_model(
     train_metrics = evaluate_regressor(model, X_train, y_train)
     valid_metrics = evaluate_regressor(model, X_valid, y_valid)
 
+    # Same chronological rows as valid_metrics. Persistence uses the target
+    # measurement at each forecast origin, not the future label.
+    y_observed = last_observed_target(signals, target_tag, X.index)
+    baseline_comparison = evaluate_naive_baselines(
+        X_train,
+        y_train,
+        X_valid,
+        y_valid,
+        y_observed,
+        model_valid_rmse=float(valid_metrics["rmse"]),
+    )
+    logger.info(
+        "Validation comparison n_samples=%d model_valid_rmse=%s "
+        "persistence_rmse=%s linear_regression_rmse=%s",
+        baseline_comparison["n_samples"],
+        baseline_comparison["model_valid_rmse"],
+        baseline_comparison["persistence"]["rmse"],
+        baseline_comparison["linear_regression"]["rmse"],
+    )
+
     stats = compute_feature_stats(X_train)
     model.metadata["feature_stats"] = stats
     model.save(model_output_path)
@@ -230,6 +252,7 @@ def train_energy_model(
         "n_features": int(len(model.feature_cols) if model.feature_cols else X.shape[1]),
         "train_metrics": train_metrics,
         "valid_metrics": valid_metrics,
+        "baseline_comparison": baseline_comparison,
         "model_output_path": model_output_path,
         "feature_stats_path": str(stats_path),
         "model_backend": model.metadata.get("model_backend"),

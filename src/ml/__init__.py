@@ -4,6 +4,12 @@ Contains feature engineering, model definitions, training, evaluation,
 and recommendation logic for kiln/mill optimization.
 """
 
+from .baselines import (
+    evaluate_naive_baselines,
+    fit_linear_regression,
+    last_observed_target,
+    persistence_predict,
+)
 from .features import (
     create_lag_features,
     create_rolling_features,
@@ -25,6 +31,10 @@ from .recommend import (
 )
 
 __all__ = [
+    "last_observed_target",
+    "persistence_predict",
+    "fit_linear_regression",
+    "evaluate_naive_baselines",
     "pivot_signals",
     "create_lag_features",
     "create_rolling_features",

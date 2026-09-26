@@ -114,6 +114,58 @@ evaluation metrics, and the joblib artifact, and registers `cement-kiln-kpi`
 in the local registry. See [MLOps](#mlops) for the tracking URI, the CI gate,
 and drift monitoring.
 
+## Demo baseline comparison
+
+The demo trainer scores two naive forecasts on the **same chronological
+validation split** as the energy model (`train_valid_split_time_series` in
+`src/ml/evaluate.py`; the rows are not shuffled). Both use only the training
+portion to fit. Persistence predicts the target value already observed at each
+forecast origin (not the future label). Ordinary linear regression uses the
+same feature columns as the model.
+
+- Target: `KILN_ZONE1_TEMP`, horizon `3`
+- Config: `config/model_config.yaml`
+- Data: `data/demo_signals.csv` (bundled synthetic demo signals, not a plant historian)
+- Model artifact path (unchanged): `artifacts/models/kiln_zone1_temp_model.joblib`
+
+Command that produced the numbers below (local SQLite, no cloud credentials):
+
+```bash
+export DATABASE_URL=sqlite:///./cement_copilot_dev.db
+./scripts/train_demo_model.sh
+```
+
+The trainer printed:
+
+```text
+Validation comparison n_samples=16 model_valid_rmse=2.3600270120946925 persistence_rmse=2.861225567829288 linear_regression_rmse=0.022998466648510584
+```
+
+The same run's JSON summary included this `baseline_comparison` object (16 validation rows out of 81 supervised rows; 65 rows were used for training):
+
+```json
+{
+  "n_samples": 16,
+  "model_valid_rmse": 2.3600270120946925,
+  "persistence": {
+    "rmse": 2.861225567829288,
+    "mae": 2.3388750000000016,
+    "n_samples": 16
+  },
+  "linear_regression": {
+    "rmse": 0.022998466648510584,
+    "mae": 0.020028990999449547,
+    "n_samples": 16
+  }
+}
+```
+
+On these 16 rows the model RMSE is lower than persistence and higher than ordinary linear regression. The model does not beat both baselines.
+
+The CI gate is still [`tests/baselines/demo_metrics.json`](tests/baselines/demo_metrics.json) (`valid_rmse` = `2.3600270120946925`, lower is better). This training run did not move that model RMSE, so the gate file was not rewritten. The naive scores are not a replacement for that gate.
+
+These figures are forecast error on synthetic demo data. They are not a plant energy saving. The product is advisory only and does not actuate equipment.
+
 ---
 
 ## How to Run the API
@@ -342,7 +394,9 @@ python -m src.ml.train --config config/model_config.yaml
 ```
 
 Params come from `config/model_config.yaml`. Metrics are the trainer's
-train/validation scores. The joblib file is logged as an artifact and
+train/validation scores, plus `model_valid_rmse`, `persistence_rmse`, and
+`linear_regression_rmse` from the [demo baseline comparison](#demo-baseline-comparison).
+The joblib file is logged as an artifact and
 registered as `cement-kiln-kpi`, with the `Production` alias updated to that
 version. Feature means and standard deviations are written next to the joblib
 (`*.feature_stats.json`).

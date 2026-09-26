@@ -404,6 +404,12 @@ def test_train_energy_model_end_to_end(tmp_path):
     )
     assert summary["n_features"] > 0
     assert {"rmse", "mae", "mape"}.issubset(summary["train_metrics"].keys())
+    comparison = summary["baseline_comparison"]
+    assert comparison["n_samples"] == summary["n_valid_samples"]
+    assert comparison["model_valid_rmse"] == summary["valid_metrics"]["rmse"]
+    for name in ("persistence", "linear_regression"):
+        assert set(comparison[name]) == {"rmse", "mae", "n_samples"}
+        assert comparison[name]["n_samples"] == summary["n_valid_samples"]
     # Artifact must exist and be loadable as an EnergyKPIModel.
     assert out_path.exists()
     reloaded = EnergyKPIModel.load(str(out_path))

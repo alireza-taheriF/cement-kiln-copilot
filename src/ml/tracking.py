@@ -83,6 +83,23 @@ def _param_value(value: Any) -> str:
     return text[:500]
 
 
+def _log_baseline_rmses(comparison: dict[str, Any]) -> None:
+    """Log the model RMSE and the two naive validation RMSEs."""
+    persistence = comparison.get("persistence") or {}
+    linear = comparison.get("linear_regression") or {}
+    named = {
+        "model_valid_rmse": comparison.get("model_valid_rmse"),
+        "persistence_rmse": persistence.get("rmse"),
+        "linear_regression_rmse": linear.get("rmse"),
+    }
+    for key, value in named.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        numeric = float(value)
+        if math.isfinite(numeric):
+            mlflow.log_metric(key, numeric)
+
+
 def _log_split_metrics(split: str, metrics: dict[str, Any]) -> None:
     for key, value in metrics.items():
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -168,6 +185,7 @@ def log_training_run(
         mlflow.set_tag("registered_model", REGISTERED_MODEL_NAME)
         _log_split_metrics("train", summary.get("train_metrics") or {})
         _log_split_metrics("valid", summary.get("valid_metrics") or {})
+        _log_baseline_rmses(summary.get("baseline_comparison") or {})
 
         # Raw joblib artifact, as produced by EnergyKPIModel.save.
         mlflow.log_artifact(model_path)
