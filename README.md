@@ -7,6 +7,9 @@ quality/efficiency targets, and serves real-time advisory **recommendations**
 
 > **مستند کامل فارسی** (معماری، راه‌اندازی، محدودیت‌ها، قیمت‌گذاری در ایران و نحوهٔ فروش):
 > [`docs/DOCUMENTATION_FA.md`](docs/DOCUMENTATION_FA.md)
+>
+> **سند هم‌بنیان‌گذاری** (حقیقت محصول، بازار ایران/منطقه/جهان، و ایده‌های تمایز):
+> [`docs/COFOUNDER_BRIEF_FA.md`](docs/COFOUNDER_BRIEF_FA.md)
 
 ---
 
