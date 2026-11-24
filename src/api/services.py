@@ -31,7 +31,9 @@ class ServiceUnavailable(RuntimeError):
     """A configuration file or model artifact is missing or invalid."""
 
 
-_lock = threading.Lock()
+# Re-entrant: a loader may itself load another service (the advisor loads the
+# plant config), which with a plain Lock deadlocks.
+_lock = threading.RLock()
 _cache: Dict[str, Any] = {}
 
 
