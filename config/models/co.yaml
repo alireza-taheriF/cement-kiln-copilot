@@ -1,0 +1,16 @@
+# Kiln-inlet CO, 5 min ahead: a constraint model for the advisor. CO responds
+# to the ID fan within minutes, so short fixed lags are used.
+target_tag: "KILN_INLET_CO_PPM"
+input_tags:
+  - "KILN_INLET_CO_PPM"
+  - "ID_FAN_PCT"
+  - "GAS_HEAT_SHARE"
+  - "SPECIFIC_HEAT_KCAL_KG"
+lags: [0, 1, 3]
+target_mode: delta
+rolling_windows: [6]
+horizon: 1
+conformal_alpha: 0.1
+plant_config: "config/plant.yaml"
+model_output_path: "artifacts/models/co/co_model.joblib"
+registered_model_name: "cement-kiln-co"

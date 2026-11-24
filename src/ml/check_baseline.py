@@ -1,6 +1,6 @@
 """Gate the demo training metric against the committed baseline.
 
-CI trains on ``data/demo_signals.csv`` and then runs this module. The job
+CI trains on the simulated demo plant (``src.sim``) and then runs this module. The job
 fails when the held-out RMSE is worse than ``tests/baselines/demo_metrics.json``
 by more than the tolerance stored in that file.
 
@@ -89,7 +89,7 @@ def write_baseline(summary_path: Path, baseline_path: Path) -> dict[str, Any]:
         "tolerance": existing.get("tolerance", DEFAULT_TOLERANCE),
         "tolerance_type": existing.get("tolerance_type", DEFAULT_TOLERANCE_TYPE),
         "direction": "lower_is_better",
-        "dataset": "data/demo_signals.csv",
+        "dataset": "src.sim.plant (14 days, seed 7)",
         "config": "config/model_config.yaml",
     }
     baseline_path.parent.mkdir(parents=True, exist_ok=True)

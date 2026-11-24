@@ -1,4 +1,4 @@
-"""Production-grade setpoint recommendation endpoint.
+"""Setpoint recommendation endpoint (single-target, legacy contract).
 
 Exposes ``POST /v1/recommend/setpoints`` which uses the trained
 :class:`~src.ml.models.EnergyKPIModel` to score perturbed setpoint candidates

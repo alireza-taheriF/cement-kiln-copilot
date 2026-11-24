@@ -1,0 +1,37 @@
+# ===========================================================================
+# Safety envelope: the single source of truth for every limit the copilot
+# respects. Consumed by src.safety.envelope.SafetyEnvelope.
+#
+# These defaults are PLACEHOLDERS for the simulated plant. Before any pilot,
+# the plant's process engineer must replace them with the plant's own
+# operating limits and sign them off (see docs/SAFETY.md).
+# ===========================================================================
+
+# Levers the advisor may propose changes to.
+#   min/max:   absolute range a recommended value must stay in
+#   max_step:  largest change allowed in ONE recommendation (rate limit)
+levers:
+  SPECIFIC_HEAT_KCAL_KG:
+    min: 700
+    max: 820
+    max_step: 12
+  ID_FAN_PCT:
+    min: 65
+    max: 88
+    max_step: 2.0
+
+# Process limits the predicted outcome must respect. With use_interval the
+# pessimistic end of the 90 % prediction interval must be inside the limit,
+# not just the point forecast.
+process_limits:
+  BZ_TEMP_C:
+    min: 1440
+    max: 1500
+    use_interval: true
+  KILN_INLET_CO_PPM:
+    max: 600
+    use_interval: true
+  KILN_INLET_O2_PCT:
+    min: 1.0
+  FREE_LIME_PCT:
+    max: 1.8

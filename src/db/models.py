@@ -8,6 +8,8 @@ The schema follows a normalized, tag-centric time-series design:
 * :class:`Signal`          - the time-series fact table (one value per tag per ts).
 * :class:`LabResult`       - laboratory quality-control measurements.
 * :class:`InferenceEvent`  - one row per successful advisory API call.
+* :class:`AdviceLog`       - every kiln-advisor output shown to an operator.
+* :class:`AdviceFeedback`  - the operator's answer to an advice (accept/reject).
 
 The database URL is resolved from the ``DATABASE_URL`` environment variable,
 falling back to a local SQLite database for development.
@@ -145,6 +147,47 @@ class InferenceEvent(Base):
             f"<InferenceEvent id={self.id} route={self.route!r} "
             f"latency_ms={self.latency_ms}>"
         )
+
+
+class AdviceLog(Base):
+    """One kiln-advisor result, as shown to the operator.
+
+    ``payload_json`` is the full :meth:`src.advisory.advisor.Advice.to_dict`
+    so shadow-mode evaluation can replay exactly what was recommended.
+    """
+
+    __tablename__ = "advice_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), nullable=False, index=True)
+    data_ts = Column(DateTime(timezone=True), nullable=True)  # last process sample used
+    status = Column(String(32), nullable=False, index=True)
+    improvement = Column(Float, nullable=True)
+    payload_json = Column(Text, nullable=False)
+
+    feedback = relationship(
+        "AdviceFeedback", back_populates="advice", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class AdviceFeedback(Base):
+    """An operator's decision on one :class:`AdviceLog` entry."""
+
+    __tablename__ = "advice_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    advice_id = Column(
+        Integer, ForeignKey("advice_log.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ts = Column(DateTime(timezone=True), nullable=False)
+    decision = Column(String(16), nullable=False)
+    reason = Column(String(64), nullable=True)
+    operator = Column(String(128), nullable=False)
+    shift = Column(String(32), nullable=True)
+    applied_json = Column(Text, nullable=True)
+    note = Column(Text, nullable=True)
+
+    advice = relationship("AdviceLog", back_populates="feedback")
 
 
 # ---------------------------------------------------------------------------

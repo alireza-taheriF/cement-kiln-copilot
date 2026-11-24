@@ -1,13 +1,17 @@
 """End-to-end training pipeline for cement-process KPI forecasting.
 
-This module wires together the existing building blocks into a single,
-production-grade trainer:
+This module wires together the building blocks into one trainer:
 
 * read process signals from the database (long format),
+* compute derived business KPIs (:mod:`src.domain.kpis`) when a requested
+  tag is derived, e.g. ``SPECIFIC_HEAT_KCAL_KG``,
+* optionally estimate transport delays and choose lags from them
+  (``lags: auto``, :mod:`src.ml.delays`),
 * assemble a supervised dataset with :mod:`src.ml.features`,
 * perform a chronological train/validation split,
 * fit an :class:`~src.ml.models.EnergyKPIModel`,
-* evaluate on both splits,
+* evaluate on both splits and calibrate a conformal prediction interval
+  on the validation split (:mod:`src.ml.uncertainty`),
 * persist the model artifact and return a structured training summary.
 
 Run it as a module::
@@ -28,19 +32,16 @@ import yaml
 from sqlalchemy.orm import Session
 
 from src.db.models import Signal, Tag, get_engine, get_session_factory
-from src.ml.evaluate import evaluate_regressor, train_valid_split_time_series
+from src.domain.kpis import FuelProperties, load_plant_config
 from src.ml.feature_stats import compute_feature_stats, feature_stats_path, write_feature_stats
-from src.ml.features import make_supervised_dataset
-from src.ml.models import EnergyKPIModel
+from src.ml.features import pivot_signals
+from src.ml.pipeline import fit_kpi_model, needs_derived_kpis, prepare_wide
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-#: Fraction of the most-recent rows held out for validation.
-DEFAULT_VALID_FRACTION = 0.2
 
 #: Output columns of :func:`load_signals_from_db`.
 SIGNAL_COLUMNS = ["timestamp", "tag_name", "value"]
@@ -117,7 +118,7 @@ def _training_config(
     return {
         "target_tag": target_tag,
         "input_tags": list(input_tags),
-        "lags": list(lags),
+        "lags": lags if isinstance(lags, str) else list(lags),
         "rolling_windows": list(rolling_windows),
         "horizon": horizon,
         "model_output_path": model_output_path,
@@ -133,6 +134,7 @@ def train_energy_model(
     horizon: int,
     model_output_path: str,
     config: Optional[Dict[str, Any]] = None,
+    fuels: Optional[FuelProperties] = None,
 ) -> Dict[str, Any]:
     """Train and persist an :class:`EnergyKPIModel` for a single KPI tag.
 
@@ -146,7 +148,9 @@ def train_energy_model(
         Tags used to build predictive features. ``target_tag`` may legitimately
         appear here (autoregressive features) and is handled without error.
     lags:
-        Lag offsets (rows) for lag features.
+        Lag offsets (rows) for lag features, or the string ``"auto"`` to add,
+        per input, the lag matching its estimated transport delay on top of
+        ``config["base_lags"]`` (default ``[1]``).
     rolling_windows:
         Window sizes (rows) for rolling features.
     horizon:
@@ -156,7 +160,11 @@ def train_energy_model(
     config:
         Optional full YAML configuration. When provided, it is logged to
         MLflow as run parameters. When omitted, the explicit trainer arguments
-        are logged instead.
+        are logged instead. Optional keys: ``base_lags``, ``max_delay_rows``,
+        ``conformal_alpha``.
+    fuels:
+        Fuel heating values used to compute derived KPI tags. Defaults to
+        :class:`~src.domain.kpis.FuelProperties` defaults.
 
     Returns
     -------
@@ -174,38 +182,29 @@ def train_energy_model(
     # Deduplicate the DB query set while preserving order; the target tag is
     # always required even if it is also an input.
     required_tags: List[str] = list(dict.fromkeys([*input_tags, target_tag]))
-    logger.info("Loading signals for tags: %s", required_tags)
+    derived = needs_derived_kpis(required_tags)
+    logger.info("Loading signals for tags: %s (derived KPIs: %s)", required_tags, derived)
 
-    signals = load_signals_from_db(session, tag_names=required_tags)
+    # Derived KPIs need their raw inputs, so load every tag in that case.
+    signals = load_signals_from_db(session, tag_names=None if derived else required_tags)
     if signals.empty:
         raise ValueError(
             "No signals found in the database for the requested tags "
             f"{required_tags}; cannot train."
         )
-
-    X, y = make_supervised_dataset(
-        signals,
+    wide = prepare_wide(pivot_signals(signals), required_tags, fuels)
+    fit = fit_kpi_model(
+        wide,
         target_tag=target_tag,
         input_tags=input_tags,
         lags=lags,
         rolling_windows=rolling_windows,
         horizon=horizon,
+        config=config,
     )
-    if X.empty:
-        raise ValueError(
-            "Supervised dataset is empty after feature/target alignment; "
-            "not enough contiguous samples for the given lags/windows/horizon."
-        )
-
-    X_train, X_valid, y_train, y_valid = train_valid_split_time_series(
-        X, y, valid_fraction=DEFAULT_VALID_FRACTION
-    )
-
-    model = EnergyKPIModel(target_name=target_tag)
-    model.fit(X_train, y_train)
-
-    train_metrics = evaluate_regressor(model, X_train, y_train)
-    valid_metrics = evaluate_regressor(model, X_valid, y_valid)
+    model, X, X_train, X_valid = fit.model, fit.X, fit.X_train, fit.X_valid
+    train_metrics, valid_metrics, conformal = fit.train_metrics, fit.valid_metrics, fit.conformal
+    delays_summary = fit.delays
 
     stats = compute_feature_stats(X_train)
     model.metadata["feature_stats"] = stats
@@ -233,6 +232,8 @@ def train_energy_model(
         "model_output_path": model_output_path,
         "feature_stats_path": str(stats_path),
         "model_backend": model.metadata.get("model_backend"),
+        "conformal": conformal.to_dict(),
+        "delays": delays_summary,
     }
 
     # Import lazily so loading this module does not require a tracking call.
@@ -307,6 +308,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_training_config(args.config)
+    plant_path = cfg.get("plant_config", "config/plant.yaml")
+    fuels = load_plant_config(plant_path).fuels if Path(plant_path).exists() else None
 
     engine = get_engine()  # DATABASE_URL resolved from environment.
     session_factory = get_session_factory(engine)
@@ -316,11 +319,12 @@ def main() -> None:
             session,
             target_tag=cfg["target_tag"],
             input_tags=list(cfg["input_tags"]),
-            lags=list(cfg["lags"]),
+            lags=cfg["lags"] if isinstance(cfg["lags"], str) else list(cfg["lags"]),
             rolling_windows=list(cfg["rolling_windows"]),
             horizon=int(cfg["horizon"]),
             model_output_path=cfg["model_output_path"],
             config=cfg,
+            fuels=fuels,
         )
     finally:
         session.close()

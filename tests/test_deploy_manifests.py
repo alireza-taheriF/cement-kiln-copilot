@@ -35,7 +35,7 @@ def test_api_deployment_probes_and_port():
 
 def test_configmap_is_non_secret_and_secret_example_holds_database_url():
     config = _load("configmap.yaml")["data"]
-    assert config["MODEL_PATH"] == "/models/kiln_zone1_temp_model.joblib"
+    assert config["MODEL_PATH"] == "/app/artifacts/models/bz_temp_model.joblib"
     assert "DATABASE_URL" not in config
     assert "CHANGE_ME" not in yaml.safe_dump(config)
 

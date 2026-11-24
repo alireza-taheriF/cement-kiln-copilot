@@ -1,0 +1,56 @@
+# ===========================================================================
+# Kiln advisor: what to optimize, which levers to try, which models guard the
+# process. Limits live in config/safety_limits.yaml, not here.
+# Consumed by src.advisory.advisor.AdvisorConfig.
+# ===========================================================================
+
+# Minimize fuel per kg clinker. The objective is computed directly from the
+# candidate lever value (it IS the lever), so no model can get it wrong.
+objective:
+  tag: SPECIFIC_HEAT_KCAL_KG
+  direction: minimize
+  # Do not recommend a change smaller than this improvement: below it the
+  # gain is inside measurement noise and not worth an operator action.
+  min_improvement: 3.0
+
+# Changes to try per lever (absolute units), filtered by the safety envelope.
+levers:
+  SPECIFIC_HEAT_KCAL_KG: [-12, -8, -4, 4]
+  ID_FAN_PCT: [-2, -1, 1, 2]
+
+# Models that predict constrained outcomes. Keys are roles; each model's
+# target tag is tested against process_limits in safety_limits.yaml.
+constraint_models:
+  bz_temp: artifacts/models/bz_temp_model.joblib
+  co: artifacts/models/co/co_model.joblib
+
+# Process knowledge: the sign of each lever's effect on each model's target.
+# A model whose local response contradicts these signs is not trusted for
+# that lever and the lever is held at its current value.
+expected_effects:
+  SPECIFIC_HEAT_KCAL_KG:
+    BZ_TEMP_C: +1
+  ID_FAN_PCT:
+    KILN_INLET_CO_PPM: -1
+
+# Probe size for the direction check, per lever (absolute units).
+direction_probe:
+  SPECIFIC_HEAT_KCAL_KG: 8
+  ID_FAN_PCT: 2
+
+# Responses smaller than this (in the target's unit) count as "no effect
+# learnt" rather than a contradiction.
+direction_tolerance:
+  BZ_TEMP_C: 0.2
+  KILN_INLET_CO_PPM: 1.0
+
+# Steady-state gain bounds per lever and target (target units per lever unit).
+# They MUST come from plant step tests during the PoC; these defaults suit
+# the simulated plant only. Where a bound exists, the lever's effect is
+# "gain x change" with the model's own gain clipped into the bounds for the
+# point estimate and the worst gain for the interval (see src.advisory.advisor).
+gain_bounds:
+  SPECIFIC_HEAT_KCAL_KG:
+    BZ_TEMP_C: [0.5, 1.6]          # °C per kcal/kg
+  ID_FAN_PCT:
+    KILN_INLET_CO_PPM: [-60, 0]    # ppm per % fan (steep at low O2)

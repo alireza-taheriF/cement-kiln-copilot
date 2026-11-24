@@ -1,0 +1,52 @@
+# ===========================================================================
+# Plant data connections (read-only). Consumed by src.connectors.sync.
+#
+#     python -m src.connectors.sync --config config/connectors.yaml --dry-run
+#
+# Start with file exports: they need no network change at the plant. Add
+# OPC UA only after the plant's IT/OT team approves a read-only account.
+# ===========================================================================
+
+sources:
+  historian_export:
+    type: csv_export
+    pattern: "data/plant_exports/*.csv"   # daily DCS/historian exports
+    layout: wide                          # one column per tag
+    timestamp_column: Time
+    timezone: Asia/Tehran
+    enabled: false
+
+  lab_sheet:
+    type: excel_lab
+    path: "data/plant_exports/lab.xlsx"
+    timestamp_column: "تاریخ"             # Jalali dates are fine
+    time_column: "ساعت"
+    sample_id_column: "شماره نمونه"
+    parameters:
+      "آهک آزاد": FREE_LIME_PCT
+    timezone: Asia/Tehran
+    enabled: false
+
+  dcs_opcua:
+    type: opcua
+    endpoint: "opc.tcp://10.0.0.10:4840"
+    username: copilot_readonly
+    node_ids:
+      K1_BZT_PV: "ns=2;s=K1.BZT.PV"
+    enabled: false
+
+# Plant tag -> canonical tag (src/domain/tags.py). canonical = scale*value + offset.
+# valid: physically possible range; values outside are rejected, not clipped.
+tags:
+  K1_FEED_PV:      {canonical: KILN_FEED_TPH, valid: [0, 400]}
+  K1_CLINKER_PV:   {canonical: CLINKER_TPH, valid: [0, 250]}
+  K1_GAS_FLOW:     {canonical: GAS_FLOW_NM3H, valid: [0, 20000]}
+  K1_MAZUT_TPH:    {canonical: MAZUT_FLOW_KGH, scale: 1000, valid: [0, 15000]}
+  K1_SPEED:        {canonical: KILN_SPEED_RPM, valid: [0, 6]}
+  K1_IDFAN_SPD:    {canonical: ID_FAN_PCT, valid: [0, 100]}
+  K1_BZT_PV:       {canonical: BZ_TEMP_C, valid: [900, 1800]}
+  K1_O2_INLET:     {canonical: KILN_INLET_O2_PCT, valid: [0, 21]}
+  K1_CO_INLET:     {canonical: KILN_INLET_CO_PPM, valid: [0, 50000]}
+  K1_NOX:          {canonical: NOX_MGNM3, valid: [0, 5000]}
+
+resample: 5min

@@ -44,7 +44,7 @@ spec:
             failureThreshold: 3
           volumeMounts:
             - name: model
-              mountPath: /models
+              mountPath: /app/artifacts
               readOnly: true
           resources:
             requests:
@@ -52,6 +52,7 @@ spec:
               memory: "256Mi"
       volumes:
         # Replace emptyDir with a volume that contains the trained joblib
-        # artifact named by MODEL_PATH. /health does not load the model.
+        # artifacts (artifacts/models/...) named by MODEL_PATH and config/advisor.yaml.
+        # /health does not load any model.
         - name: model
           emptyDir: {}

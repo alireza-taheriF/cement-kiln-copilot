@@ -219,8 +219,7 @@ def rank_candidates(
     ValueError
         If ``top_k`` is not positive, or no candidate can be evaluated.
     """
-    # Imported lazily to avoid an import cycle between the ML and API layers.
-    from src.api.routers.prediction import make_prediction_features
+    from src.ml.inference import features_from_long
 
     if top_k <= 0:
         raise ValueError(f"top_k must be positive, got {top_k}.")
@@ -237,7 +236,7 @@ def rank_candidates(
     for candidate in candidates:
         try:
             candidate_df = apply_candidate_to_signals(request_df, candidate)
-            X = make_prediction_features(candidate_df, model)
+            X = features_from_long(candidate_df, model)
             predictions = model.predict(X)
             score = score_candidate(predictions, desired_target)
         except ValueError as exc:

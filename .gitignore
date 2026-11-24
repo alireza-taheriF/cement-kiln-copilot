@@ -26,3 +26,7 @@ deploy/k8s/secret.yaml
 .DS_Store
 .idea/
 .vscode/
+
+# Simulated demo plant (regenerate with: python -m src.sim.generate)
+data/demo/
+data/plant_exports/

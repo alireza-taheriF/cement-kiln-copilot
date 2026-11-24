@@ -1,0 +1,28 @@
+[project]
+name = "cement-kiln-copilot"
+version = "0.2.0"
+description = "Open-loop decision support for cement kiln and mill energy optimization."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+[tool.pytest.ini_options]
+# Tests import the application as ``src.*`` from the repository root.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+# Dump every thread's stack if a single test runs longer than this (seconds).
+faulthandler_timeout = 240
+filterwarnings = [
+    "ignore::DeprecationWarning:mlflow.*",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince20",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+# Pyflakes (real bugs: undefined names, unused imports) and syntax errors.
+select = ["F", "E9"]
