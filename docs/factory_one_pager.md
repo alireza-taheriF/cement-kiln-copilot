@@ -25,13 +25,17 @@ Even modest improvements in specific heat consumption or reduced quality variabi
 
 ## What Cement Kiln Copilot does
 
-Cement Kiln Copilot is a **decision-support system** that:
+Cement Kiln Copilot is a **decision-support system** focused on fuel and power cost:
 
-1. **Ingests** recent process signals and optional lab/QC data from the plant historian or exported time-series.
-2. **Predicts** how a chosen KPI (e.g. zone temperature, specific energy proxy, quality indicator) is likely to behave over a short horizon.
-3. **Recommends** ranked candidate setpoint adjustments that move the predicted KPI toward a desired target—each scored by the trained model, not by heuristics.
+1. **Mill scheduling under the power quota** — which mill runs in which hour, given the quota, regulated and free-market tariffs, silo levels and dispatch.
+2. **Kiln firing advice** — how far fuel per kg clinker can come down now, with the burning-zone temperature and CO forecast inside signed-off limits (pessimistic 90 % interval).
+3. **Gas ↔ mazut transfers** — a step-by-step plan learnt from the plant's own past transfers.
+4. **Free lime every minute** — a soft sensor between lab samples, with an interval.
+5. **Equipment early warnings** — kiln-shell hot spots, mill bearings.
+6. **Shift report** — in Persian, every number computed from data.
+7. **Measured savings** — baseline-adjusted M&V (ASHRAE Guideline 14), the basis for a savings-share contract.
 
-The system is delivered as a trained model, REST API, and operator-facing dashboard. It fits alongside existing DCS/SCADA workflows; it does not replace them.
+It reads data only (file exports or read-only OPC UA) and never writes to the DCS. It is delivered as an on-premises API and a Persian operator dashboard alongside existing DCS/SCADA workflows.
 
 ## Inputs required
 

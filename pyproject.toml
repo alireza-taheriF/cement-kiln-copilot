@@ -11,6 +11,8 @@ license = { text = "Proprietary" }
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+# Dump every thread's stack if a single test runs longer than this (seconds).
+faulthandler_timeout = 240
 filterwarnings = [
     "ignore::DeprecationWarning:mlflow.*",
     "ignore::pydantic.warnings.PydanticDeprecatedSince20",
