@@ -44,7 +44,7 @@ A **{{4|6|8}}-week** advisory pilot on **{{KILN_LINE}}** to:
 | Item | Detail |
 | ---- | ------ |
 | Asset | {{KILN_LINE}} — kiln pyroprocessing zone |
-| Primary KPI | {{TARGET_KPI — e.g. KILN_ZONE1_TEMP, specific heat proxy, free lime model}} |
+| Primary KPI | {{TARGET_KPI — e.g. mill kWh/t and power cost under the quota, kiln specific heat (kcal/kg), free lime}} |
 | Adjustable setpoints | {{LIST — e.g. fuel flow, ID fan, feed rate}} (max {{N}} tags) |
 | Users | Process engineer(s), kiln operator(s), production supervisor |
 | Deployment | {{On-premise VM / plant DMZ / isolated pilot server}} |

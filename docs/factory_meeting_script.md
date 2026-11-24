@@ -40,37 +40,35 @@
 
 > "This is the operator-facing view. In production it would sit beside your existing tools—read-only from the historian, no writes to control."
 
-**Step B — Load process context (30 sec)**
+**Step B — Kiln advisor (2 min)**
 
-- Click *Load demo scenario (all tags)*.
-- Mention tags: `KILN_ZONE1_TEMP`, `KILN_ZONE2_TEMP`, `KILN_FUEL_FLOW` (mapped to your plant's tag names in a real deployment).
+- Open the *Kiln advisor* tab, click *Load simulated plant data*, then *Get advice*.
+- Point out: the proposed fuel per kg clinker, the ID-fan setting, and the daily saving in Gcal and litres of mazut.
+- Open *Why?*: the forecast burning-zone temperature and CO with their 90 % range, the limiting constraint, and any lever held because the model disagreed with process physics.
 
-> "Here we use a recent signal window—the same structure we'd pull from your historian export or live feed."
+> "The copilot only proposes a change if the pessimistic end of every forecast stays inside your own limits, and only in small steps. If nothing is safe, it says so."
 
-**Step C — KPI prediction (1 min)**
+- Record a rejection with a reason code to show the feedback loop.
 
-- Click *Run KPI Prediction*.
-- Highlight the forecast chart and mean / min / max summary.
+**Step C — Mill schedule (1 min)**
 
-> "The model forecasts where the chosen KPI is heading over the configured horizon. This is the same model used for recommendations—not a separate heuristic."
+- Open *Mill schedule*, keep the default quota (no power 19–23) and tariffs, click *Optimize schedule*.
 
-**Step D — Setpoint recommendations (2 min)**
+> "Same cement in the silo at the end, lower power cost: grinding moves to allowed, cheap hours and free-market purchases drop. This is the fastest saving and needs no change in the kiln."
 
-- Set `desired_target` slightly above or below the current operating point.
-- Click *Run Recommendation*.
-- Show the ranked table and score bar chart.
+**Step D — Free lime, equipment, shift report (1 min)**
 
-> "The engine perturbs adjustable setpoints within safe bounds, re-runs the model for each candidate, and ranks them. The top row is the best match to your desired target."
+- *Free lime*: a lab-quality estimate every few minutes, with its range and when the lab result for that clinker is due.
+- *Equipment*: the simulated mill-2 bearing and shell hot spot flagged days ahead.
+- *Shift report*: the Persian handover report built from data.
 
 ---
 
-### 4. What the recommendation score means (1 min)
+### 4. How savings are proven (1 min)
 
-> "The **score** is the model's predicted distance to your desired target—mean absolute error across the forecast window. **Lower is better.** It is a ranking metric, not a guarantee of plant outcome.  
->  
-> You also see **predicted mean, min, and max** for each candidate so you can judge stability, not just the average.  
->  
-> Operators and process engineers decide whether a recommendation is sensible given current feed, equipment, and safety limits. The system never acts on its own."
+> "Before the copilot runs we fit a baseline of your fuel and power use against production for several weeks. Afterwards we report every month what energy *would have been* at your actual production, minus what it was, with the statistical uncertainty (ASHRAE Guideline 14). Only significant savings count. That report is what the savings share is invoiced on."
+>
+> "Everything you saw is a simulated plant. The first real numbers come from your data in the audit."
 
 ---
 
@@ -134,16 +132,17 @@
 
 ### ۳. دمو (۴ دقیقه)
 
-1. وضعیت سلامت بک‌اند را نشان دهید (*Check backend status*).
-2. سناریوی دمو را بارگذاری کنید (*Load demo scenario*).
-3. *Run KPI Prediction* — نمودار و میانگین/حداقل/حداکثر پیش‌بینی.
-4. *desired_target* را تغییر دهید و *Run Recommendation* — جدول رتبه‌بندی و نمودار امتیاز.
+1. وضعیت سلامت بک‌اند را نشان دهید.
+2. زبانهٔ **دستیار کوره**: «بارگذاری دادهٔ کارخانهٔ شبیه‌سازی‌شده» و «دریافت توصیه»؛ مصرف حرارت ویژهٔ پیشنهادی، دور فن ID، صرفه‌جویی روزانه (گیگاکالری و لیتر مازوت) و بخش «چرا؟» با بازهٔ ۹۰٪ دمای زون پخت و CO.
+3. یک بازخورد «رد کردم» با دلیل ثبت کنید تا چرخهٔ بازخورد دیده شود.
+4. زبانهٔ **زمان‌بندی آسیاب**: «محاسبهٔ برنامهٔ بهینه»؛ صرفه‌جویی برق با همان موجودی سیلو در پایان.
+5. **آهک آزاد**، **تجهیزات** (یاتاقان آسیاب ۲ و نقطهٔ داغ پوسته، چند روز زودتر) و **گزارش شیفت** فارسی.
 
-> «موتور توصیه، چند کاندیدای ست‌پوینت را با مدل واقعی امتیازدهی می‌کند. ردیف اول بهترین تطابق با هدف شماست.»
+> «سامانه فقط وقتی تغییر پیشنهاد می‌دهد که بدبینانه‌ترین سر پیش‌بینی‌ها هم داخل حدود خود شما باشد، و فقط با گام کوچک. اگر گزینهٔ ایمنی نباشد، صریح می‌گوید.»
 
-### ۴. معنی امتیاز (Score)
+### ۴. صرفه‌جویی چطور ثابت می‌شود
 
-> «**امتیاز** فاصله پیش‌بینی‌شده تا هدف است — **کمتر بهتر است**. تضمین نتیجه در کارخانه نیست؛ فقط برای رتبه‌بندی کاندیداهاست. تصمیم نهایی با تیم فرآیند و اپراتور است.»
+> «قبل از شروع، چند هفته مصرف سوخت و برق را در برابر تولید مدل می‌کنیم (خط مبنا). بعد هر ماه گزارش می‌دهیم مصرف با تولید واقعی *چقدر می‌شد* منهای *چقدر شد*، با عدم‌قطعیت آماری (ASHRAE Guideline 14). فقط صرفه‌جویی معنادار حساب می‌شود و فاکتور سهم از صرفه‌جویی روی همین گزارش است. هرچه دیدید دادهٔ شبیه‌سازی‌شده است؛ اولین عدد واقعی از دادهٔ شما در ممیزی می‌آید.»
 
 ### ۵. پیشنهاد پایلوت
 
