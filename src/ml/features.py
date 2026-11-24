@@ -23,7 +23,7 @@ Design notes
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -135,13 +135,28 @@ def create_lag_features(
     ValueError
         If any requested input tag is missing from ``wide_df``.
     """
-    _require_tags(wide_df, input_tags, role="input")
+    return create_lag_features_per_tag(wide_df, {tag: list(lags) for tag in input_tags})
 
+
+def create_lag_features_per_tag(
+    wide_df: pd.DataFrame,
+    lags_by_tag: Dict[str, List[int]],
+) -> pd.DataFrame:
+    """Lag features with a different lag set per tag.
+
+    Used when lags come from estimated transport delays
+    (:mod:`src.ml.delays`): fuel flow may need lag 4 while the target's own
+    history needs lag 1. Columns follow the ``{tag}_lag_{n}`` convention, in
+    the order of ``lags_by_tag`` and then ascending lag. Lag ``0`` is the
+    current value.
+    """
+    _require_tags(wide_df, list(lags_by_tag), role="input")
     features: dict[str, pd.Series] = {}
-    for tag in input_tags:
-        for lag in lags:
+    for tag, lags in lags_by_tag.items():
+        for lag in sorted(set(int(v) for v in lags)):
+            if lag < 0:
+                raise ValueError(f"lags must be >= 0, got {lag} for {tag!r}.")
             features[f"{tag}_lag_{lag}"] = wide_df[tag].shift(lag)
-
     return pd.DataFrame(features, index=wide_df.index)
 
 
@@ -246,6 +261,8 @@ def make_supervised_dataset(
     lags: List[int],
     rolling_windows: List[int],
     horizon: int,
+    lags_by_tag: Optional[Dict[str, List[int]]] = None,
+    wide: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, pd.Series]:
     """Build an aligned ``(X, y)`` supervised dataset from long-format signals.
 
@@ -273,6 +290,11 @@ def make_supervised_dataset(
         Window sizes (rows) for rolling features.
     horizon:
         Forecast horizon (rows) for the target.
+    lags_by_tag:
+        Optional per-tag lag sets; overrides ``lags`` for the tags it names.
+    wide:
+        Optional pre-pivoted wide frame (e.g. with derived KPI columns); when
+        given, ``signals_df`` is ignored.
 
     Returns
     -------
@@ -286,13 +308,17 @@ def make_supervised_dataset(
         If any of ``input_tags`` or ``target_tag`` is absent from the pivoted
         signals, or if ``horizon`` is not positive.
     """
-    wide = pivot_signals(signals_df)
+    if wide is None:
+        wide = pivot_signals(signals_df)
 
     # Validate up front for a single, clear error before doing any work.
     _require_tags(wide, input_tags, role="input")
     _require_tags(wide, [target_tag], role="target")
 
-    lag_features = create_lag_features(wide, input_tags, lags)
+    per_tag = {tag: list(lags) for tag in input_tags}
+    if lags_by_tag:
+        per_tag.update({tag: list(v) for tag, v in lags_by_tag.items() if tag in per_tag})
+    lag_features = create_lag_features_per_tag(wide, per_tag)
     rolling_features = create_rolling_features(wide, input_tags, rolling_windows)
 
     X = pd.concat([lag_features, rolling_features], axis=1)

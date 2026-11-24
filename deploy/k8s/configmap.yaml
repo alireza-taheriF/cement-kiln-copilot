@@ -11,8 +11,9 @@ data:
   LOG_LEVEL: "INFO"
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  # Artifact path inside the API container. Mount the trained joblib file here.
-  MODEL_PATH: "/models/kiln_zone1_temp_model.joblib"
+  # Artifact paths inside the API container. Mount the trained artifacts/ dir at
+  # /app/artifacts (the advisor reads config/advisor.yaml relative to /app).
+  MODEL_PATH: "/app/artifacts/models/bz_temp_model.joblib"
   MODEL_CONFIG_PATH: "config/model_config.yaml"
   # In-cluster MLflow tracking server. The API still loads MODEL_PATH unless
   # MODEL_URI is set (for example models:/cement-kiln-kpi/Production).

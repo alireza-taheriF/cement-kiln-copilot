@@ -1,4 +1,4 @@
-"""Production-grade model wrapper for cement-process KPI forecasting.
+"""Model wrapper for cement-process KPI forecasting.
 
 This module provides :class:`EnergyKPIModel`, a thin, self-describing wrapper
 around a regression estimator (LightGBM by default, scikit-learn
@@ -201,7 +201,26 @@ class EnergyKPIModel:
             )
 
         ordered = X[self.feature_cols]
-        return np.asarray(self.model.predict(ordered))
+        raw = np.asarray(self.model.predict(ordered))
+        if self.metadata.get("target_mode") == "delta":
+            # The estimator learnt the change over the horizon; add it to the
+            # current value of the target (its lag-0 feature).
+            raw = raw + ordered[self.metadata["anchor_feature"]].to_numpy(dtype=float)
+        return raw
+
+    def predict_interval(self, X: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Point prediction and conformal interval ``(pred, lower, upper)``.
+
+        The half-width comes from ``metadata["conformal"]`` written at training
+        time (:mod:`src.ml.uncertainty`). Models trained before calibration was
+        added get an infinite interval, which is the honest default.
+        """
+        from src.ml.uncertainty import ConformalCalibration
+
+        pred = self.predict(X)
+        raw = self.metadata.get("conformal")
+        half = ConformalCalibration.from_dict(raw).half_width if raw else float("inf")
+        return pred, pred - half, pred + half
 
     # ------------------------------------------------------------------ #
     # Persistence

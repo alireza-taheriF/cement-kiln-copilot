@@ -1,0 +1,22 @@
+# ===========================================================================
+# Plant constants. Replace every value with the plant's own figures during the
+# data audit; the defaults describe a generic 3,000 t/d dry-process line.
+# Consumed by src.domain.kpis.load_plant_config.
+# ===========================================================================
+
+fuels:
+  gas_lhv_kcal_per_nm3: 8200      # from the plant's gas certificate
+  mazut_lhv_kcal_per_kg: 9600
+  mazut_density_kg_per_l: 0.95
+
+clinker_factor: 1.58               # t raw meal per t clinker
+mill_ids: [1, 2]                   # cement mills covered by the scheduler/KPIs
+shell_positions: 10                # axial positions exported by the shell scanner
+
+prices:
+  currency: IRT                    # Toman
+  gas_per_nm3: 0                   # fill in: plant's gas tariff
+  mazut_per_l: 0                   # fill in: delivered mazut price, excl. transport
+  mazut_transport_per_l: 2000      # haulage from southern refineries (Mehr 1405 figure)
+  grid_power_per_kwh: 0            # fill in: regulated tariff
+  free_market_power_per_kwh: 0     # fill in: free-market / green-board price

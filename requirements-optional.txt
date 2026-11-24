@@ -1,0 +1,2 @@
+# Optional integrations. Install only what the plant uses.
+asyncua>=1.1         # OPC UA history reads (src.connectors.sources.OpcUaSource)

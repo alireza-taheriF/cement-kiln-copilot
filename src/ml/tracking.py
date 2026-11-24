@@ -106,26 +106,26 @@ class _EnergyKPIPyfunc(mlflow.pyfunc.PythonModel):
         return self._model.predict(frame)
 
 
-def _promote_to_production(version: str) -> None:
+def _promote_to_production(version: str, name: str = REGISTERED_MODEL_NAME) -> None:
     client = mlflow.MlflowClient()
     alias_ok = False
     stage_ok = False
     try:
         client.set_registered_model_alias(
-            REGISTERED_MODEL_NAME, PRODUCTION_ALIAS, version
+            name, PRODUCTION_ALIAS, version
         )
         alias_ok = True
     except Exception:
         logger.warning(
             "Could not set the %s alias on %s version %s",
             PRODUCTION_ALIAS,
-            REGISTERED_MODEL_NAME,
+            name,
             version,
             exc_info=True,
         )
     try:
         client.transition_model_version_stage(
-            name=REGISTERED_MODEL_NAME,
+            name=name,
             version=version,
             stage=PRODUCTION_ALIAS,
             archive_existing_versions=True,
@@ -134,14 +134,14 @@ def _promote_to_production(version: str) -> None:
     except Exception:
         logger.warning(
             "Could not transition %s version %s to %s",
-            REGISTERED_MODEL_NAME,
+            name,
             version,
             PRODUCTION_ALIAS,
             exc_info=True,
         )
     if not (alias_ok or stage_ok):
         raise RuntimeError(
-            f"Failed to mark {REGISTERED_MODEL_NAME} version {version} as Production."
+            f"Failed to mark {name} version {version} as Production."
         )
 
 
@@ -153,9 +153,12 @@ def log_training_run(
 ) -> str:
     """Log config params, trainer metrics, and the joblib artifact.
 
-    Registers ``cement-kiln-kpi`` and points the ``Production`` alias (and
-    stage) at this version. Returns the MLflow run id.
+    Registers the model under ``config["registered_model_name"]`` (default
+    ``cement-kiln-kpi``) and points the ``Production`` alias (and stage) at
+    this version, so each target (burning zone, CO, ...) keeps its own
+    registry entry. Returns the MLflow run id.
     """
+    registered_name = str(config.get("registered_model_name") or REGISTERED_MODEL_NAME)
     configure_mlflow()
     try:
         mlflow.autolog(disable=True)
@@ -165,7 +168,7 @@ def log_training_run(
     mlflow.set_experiment(EXPERIMENT_NAME)
     with mlflow.start_run(run_name="train-energy-kpi") as run:
         mlflow.log_params({key: _param_value(value) for key, value in config.items()})
-        mlflow.set_tag("registered_model", REGISTERED_MODEL_NAME)
+        mlflow.set_tag("registered_model", registered_name)
         _log_split_metrics("train", summary.get("train_metrics") or {})
         _log_split_metrics("valid", summary.get("valid_metrics") or {})
 
@@ -184,7 +187,7 @@ def log_training_run(
                 "scikit-learn",
                 "lightgbm",
             ],
-            registered_model_name=REGISTERED_MODEL_NAME,
+            registered_model_name=registered_name,
         )
         try:
             info = mlflow.pyfunc.log_model(artifact_path="model", **log_kwargs)
@@ -194,17 +197,17 @@ def log_training_run(
         version = getattr(info, "registered_model_version", None)
         if not version:
             client = mlflow.MlflowClient()
-            versions = client.search_model_versions(f"name='{REGISTERED_MODEL_NAME}'")
+            versions = client.search_model_versions(f"name='{registered_name}'")
             if not versions:
                 raise RuntimeError(
-                    f"MLflow did not register a version of {REGISTERED_MODEL_NAME}."
+                    f"MLflow did not register a version of {registered_name}."
                 )
             version = str(max(int(item.version) for item in versions))
-        _promote_to_production(str(version))
+        _promote_to_production(str(version), registered_name)
         logger.info(
             "Logged MLflow run %s and registered %s version %s as Production",
             run.info.run_id,
-            REGISTERED_MODEL_NAME,
+            registered_name,
             version,
         )
         return run.info.run_id

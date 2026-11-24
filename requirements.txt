@@ -1,17 +1,28 @@
-pandas
-numpy
-scikit-learn
-lightgbm
-fastapi
-uvicorn
-sqlalchemy
-psycopg2-binary
-pydantic
-streamlit
-requests
-httpx
-python-dotenv
-pyyaml
-joblib
+# Core numerics and ML
+pandas>=2.1
+numpy>=1.26
+scipy>=1.11          # HiGHS MILP solver for the mill scheduler, M&V statistics
+scikit-learn>=1.4
+lightgbm>=4.0        # default regressor; falls back to scikit-learn if missing
+joblib>=1.3
+pyyaml>=6.0
+openpyxl>=3.1        # Excel lab sheets (src.connectors)
+
+# Service
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.5
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+httpx>=0.27          # FastAPI TestClient, optional local-LLM shift-report polish
+python-dotenv>=1.0
+
+# Dashboard
+streamlit>=1.32
+requests>=2.31
+
+# Experiment tracking (local file store by default)
 mlflow>=2.14,<3
-pytest
+
+# Tests
+pytest>=8.0

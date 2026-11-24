@@ -1,13 +1,17 @@
-"""Streamlit operator dashboard for cement-kiln-copilot.
+"""Streamlit operator dashboard for cement-kiln-copilot (Persian first).
 
-An end-to-end advisory demo that talks to the FastAPI backend using the
-current endpoint contracts:
+A thin client of the FastAPI backend. Tabs:
 
-* ``GET  /health``                 - liveness probe
-* ``GET  /``                       - service/version banner
-* ``POST /v1/predict/energy-kpi``  - KPI forecasting
-* ``POST /v1/recommend/setpoints`` - model-based setpoint recommendations
-* ``GET  /v1/monitor/drift``       - feature z-scores versus training stats
+* **Kiln advisor** - ``POST /v1/advise/kiln`` + operator feedback
+* **Mill schedule** - ``POST /v1/energy/mill-schedule``
+* **Free lime** - ``POST /v1/quality/free-lime``
+* **Equipment** - ``POST /v1/maintenance/condition``
+* **Shift report** - ``POST /v1/reports/shift``
+* **Model lab** - ``POST /v1/predict/energy-kpi``, ``POST /v1/recommend/setpoints``,
+  ``GET /v1/monitor/drift``
+
+Without plant data every tab can load a window of the simulated demo plant
+(``GET /v1/demo/window``).
 
 Run with::
 
@@ -21,11 +25,9 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -39,23 +41,19 @@ RECOMMEND_PATH = "/v1/recommend/setpoints"
 DRIFT_PATH = "/v1/monitor/drift"
 REQUEST_TIMEOUT_SECONDS = 15
 
-# Tags the synthetic generator understands, with realistic baselines.
-SAMPLE_TAG_BASELINES: Dict[str, Tuple[float, float, float]] = {
-    # tag: (baseline, oscillation_amplitude, noise_scale)
-    "KILN_ZONE1_TEMP": (1380.0, 8.0, 1.5),
-    "KILN_ZONE2_TEMP": (1320.0, 6.0, 1.2),
-    "KILN_FUEL_FLOW": (42.0, 1.5, 0.3),
-}
-# Include every tag the demo model was trained on, so a sample payload always
-# carries all required base tags for prediction/recommendation.
-DEFAULT_SAMPLE_TAGS: List[str] = [
-    "KILN_ZONE1_TEMP",
-    "KILN_ZONE2_TEMP",
-    "KILN_FUEL_FLOW",
-]
-DEFAULT_ADJUSTABLE_TAGS: List[str] = ["KILN_FUEL_FLOW"]
-DEFAULT_STEP_FRACTIONS: List[float] = [-0.10, -0.05, 0.0, 0.05, 0.10]
-SAMPLE_SEED = 42
+DEMO_PATH = "/v1/demo/window"
+ADVISE_PATH = "/v1/advise/kiln"
+FEEDBACK_PATH = "/v1/advise/feedback"
+REASONS_PATH = "/v1/advise/reasons"
+STATS_PATH = "/v1/advise/stats"
+MILL_PATH = "/v1/energy/mill-schedule"
+FREE_LIME_PATH = "/v1/quality/free-lime"
+CONDITION_PATH = "/v1/maintenance/condition"
+SHIFT_PATH = "/v1/reports/shift"
+LONG_TIMEOUT_SECONDS = 60
+
+DEFAULT_ADJUSTABLE_TAGS: List[str] = ["ID_FAN_PCT"]
+DEFAULT_STEP_FRACTIONS: List[float] = [-0.03, -0.015, 0.0, 0.015, 0.03]
 
 
 # --------------------------------------------------------------------------- #
@@ -73,12 +71,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "checklist_title": "چک‌لیست دمو",
         "checklist_body": (
             "۱. در نوار کناری **وضعیت بک‌اند** را بررسی کنید.\n"
-            "۲. **بارگذاری سناریوی دمو (همهٔ تگ‌ها)** را بزنید.\n"
-            "۳. **اجرای پیش‌بینی KPI** را بزنید تا هدف پیش‌بینی شود.\n"
-            "۴. یک **مقدار هدف** تعیین و **تگ‌های قابل تنظیم** را انتخاب کنید.\n"
-            "۵. **اجرای توصیه** را بزنید و بهترین گزینه و امتیاز را ببینید.\n"
-            "۶. پنل **پایش رانش** را ببینید: z-score ویژگی‌ها نسبت به آموزش.\n\n"
-            "_فقط مشورتی: سامانه ست‌پوینت پیشنهاد می‌دهد و تجهیزات را فرمان نمی‌دهد._"
+            "۲. در زبانهٔ **دستیار کوره** دادهٔ دمو را بارگذاری و **دریافت توصیه** را بزنید.\n"
+            "۳. توصیه، بازهٔ اطمینان پیش‌بینی‌ها و دلیل آن را بخوانید و بازخورد ثبت کنید.\n"
+            "۴. در **زمان‌بندی آسیاب** صرفه‌جویی برق نسبت به روش فعلی را ببینید.\n"
+            "۵. **آهک آزاد**، **تجهیزات** و **گزارش شیفت** را هم امتحان کنید.\n\n"
+            "_فقط مشورتی: سامانه پیشنهاد می‌دهد و هیچ فرمانی به DCS نمی‌فرستد._"
         ),
         "backend_connection": "اتصال بک‌اند",
         "api_base_url": "آدرس پایهٔ API",
@@ -90,17 +87,18 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "service_banner": "سرویس: {service} (نسخهٔ {version})",
         "sample_data": "دادهٔ نمونه",
         "rows": "تعداد ردیف",
+        "demo_end_row": "ردیف پایانی دادهٔ دمو",
         "start_date": "تاریخ شروع",
         "tags": "تگ‌ها",
         "use_sample": "ساخت دادهٔ نمونه",
         "reset_payload": "پاک‌کردن داده",
         "select_one_tag": "حداقل یک تگ انتخاب کنید.",
-        "load_demo": "بارگذاری سناریوی دمو (همهٔ تگ‌ها)",
+        "load_demo": "بارگذاری دادهٔ کارخانهٔ شبیه‌سازی‌شده",
         "input_data": "۱. دادهٔ ورودی",
         "input_mode": "حالت ورودی",
-        "mode_synthetic": "نمونهٔ ساختگی",
+        "mode_synthetic": "کارخانهٔ شبیه‌سازی‌شده",
         "mode_manual": "JSON دستی",
-        "generate_hint": "برای ساخت داده، در نوار کناری **ساخت دادهٔ نمونه** را بزنید.",
+        "generate_hint": "برای شروع، **بارگذاری دادهٔ کارخانهٔ شبیه‌سازی‌شده** را بزنید.",
         "rows_tags_caption": "{n} ردیف · تگ‌ها: {tags}",
         "request_payload_json": "بدنهٔ درخواست (JSON)",
         "payload_valid": "بدنهٔ JSON معتبر است.",
@@ -153,13 +151,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "checklist_title": "Demo checklist",
         "checklist_body": (
             "1. **Check backend status** in the sidebar.\n"
-            "2. **Load demo scenario (all tags)** in the sidebar.\n"
-            "3. **Run KPI Prediction** to forecast the target.\n"
-            "4. Set a **desired target** and pick **adjustable tags**.\n"
-            "5. **Run Recommendation** and read the best candidate + score.\n"
-            "6. Read the **drift status** panel: feature z-scores versus training.\n\n"
-            "_Advisory only: the system suggests setpoints; it does not actuate "
-            "equipment._"
+            "2. In **Kiln advisor**, load the demo data and press **Get advice**.\n"
+            "3. Read the recommendation, its forecast intervals and the reasons; send feedback.\n"
+            "4. In **Mill schedule**, see the power saving against today's rule.\n"
+            "5. Try **Free lime**, **Equipment** and **Shift report** too.\n\n"
+            "_Advisory only: the system suggests; it never writes to the DCS._"
         ),
         "backend_connection": "Backend connection",
         "api_base_url": "API base URL",
@@ -171,17 +167,18 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "service_banner": "Service: {service} (v{version})",
         "sample_data": "Sample data",
         "rows": "Rows",
+        "demo_end_row": "Demo end row",
         "start_date": "Start date",
         "tags": "Tags",
         "use_sample": "Use sample payload",
         "reset_payload": "Reset payload",
         "select_one_tag": "Select at least one tag.",
-        "load_demo": "Load demo scenario (all tags)",
+        "load_demo": "Load simulated plant data",
         "input_data": "1. Input data",
         "input_mode": "Input mode",
-        "mode_synthetic": "Synthetic sample",
+        "mode_synthetic": "Simulated plant",
         "mode_manual": "Manual JSON",
-        "generate_hint": "Use **Use sample payload** in the sidebar to generate data.",
+        "generate_hint": "Press **Load simulated plant data** to start.",
         "rows_tags_caption": "{n} rows · tags: {tags}",
         "request_payload_json": "Request payload (JSON)",
         "payload_valid": "Payload is valid JSON.",
@@ -228,6 +225,107 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "drift_inline": "Drift: max |z| = {z} over the last {n} predictions.",
     },
 }
+
+
+# Strings of the operational tabs (merged into TRANSLATIONS below).
+_TAB_STRINGS: Dict[str, Dict[str, str]] = {
+    "fa": {
+        "tab_advisor": "دستیار کوره",
+        "tab_mills": "زمان‌بندی آسیاب",
+        "tab_quality": "آهک آزاد",
+        "tab_equipment": "تجهیزات",
+        "tab_shift": "گزارش شیفت",
+        "tab_lab": "آزمایشگاه مدل",
+        "simulated_note": "دادهٔ دمو از کارخانهٔ شبیه‌سازی‌شده است؛ برای تصمیم مهندسی استفاده نکنید.",
+        "run_advice": "دریافت توصیه",
+        "status": "وضعیت",
+        "status_recommend": "توصیهٔ تغییر",
+        "status_keep_current": "تنظیمات فعلی را نگه دارید",
+        "status_restore_limits": "بازگرداندن به محدودهٔ مجاز",
+        "status_no_safe_candidate": "گزینهٔ ایمن وجود ندارد",
+        "lever": "اهرم",
+        "current": "فعلی",
+        "proposed": "پیشنهادی",
+        "improvement": "بهبود (kcal/kg)",
+        "outcomes": "پیش‌بینی متغیرهای حفاظتی",
+        "savings_day": "صرفه‌جویی روزانه",
+        "why": "چرا؟",
+        "feedback": "بازخورد اپراتور",
+        "operator": "نام اپراتور",
+        "decision": "تصمیم",
+        "accepted": "پذیرفتم",
+        "rejected": "رد کردم",
+        "modified": "با تغییر اجرا کردم",
+        "reason": "دلیل",
+        "send_feedback": "ثبت بازخورد",
+        "feedback_saved": "بازخورد ثبت شد.",
+        "acceptance": "نرخ پذیرش",
+        "run_schedule": "محاسبهٔ برنامهٔ بهینه",
+        "hours": "افق (ساعت)",
+        "grid_price": "قیمت برق سهمیه (تومان/kWh)",
+        "peak_price": "قیمت برق ساعت اوج (تومان/kWh)",
+        "free_price": "قیمت برق آزاد (تومان/kWh)",
+        "no_quota_hours": "ساعت‌های بدون سهمیه (مثلاً 19-23)",
+        "saving": "صرفه‌جویی نسبت به روش فعلی",
+        "free_avoided": "برق آزاد اجتناب‌شده (kWh)",
+        "run_free_lime": "تخمین آهک آزاد",
+        "free_lime_now": "آهک آزاد تخمینی",
+        "lab_due": "نتیجهٔ آزمایشگاه این کلینکر",
+        "run_condition": "بررسی وضعیت تجهیزات",
+        "run_shift": "ساخت گزارش شیفت",
+        "n_alarm": "آلارم",
+        "n_warning": "هشدار",
+    },
+    "en": {
+        "tab_advisor": "Kiln advisor",
+        "tab_mills": "Mill schedule",
+        "tab_quality": "Free lime",
+        "tab_equipment": "Equipment",
+        "tab_shift": "Shift report",
+        "tab_lab": "Model lab",
+        "simulated_note": "Demo data comes from the simulated plant; never use it for engineering decisions.",
+        "run_advice": "Get advice",
+        "status": "Status",
+        "status_recommend": "Change recommended",
+        "status_keep_current": "Keep current settings",
+        "status_restore_limits": "Restore limits",
+        "status_no_safe_candidate": "No safe candidate",
+        "lever": "Lever",
+        "current": "Current",
+        "proposed": "Proposed",
+        "improvement": "Improvement (kcal/kg)",
+        "outcomes": "Guarded variables (forecast)",
+        "savings_day": "Savings per day",
+        "why": "Why?",
+        "feedback": "Operator feedback",
+        "operator": "Operator",
+        "decision": "Decision",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "modified": "Applied with changes",
+        "reason": "Reason",
+        "send_feedback": "Send feedback",
+        "feedback_saved": "Feedback saved.",
+        "acceptance": "Acceptance rate",
+        "run_schedule": "Optimize schedule",
+        "hours": "Horizon (h)",
+        "grid_price": "Quota power price (per kWh)",
+        "peak_price": "Peak-hour price (per kWh)",
+        "free_price": "Free-market price (per kWh)",
+        "no_quota_hours": "Hours without quota (e.g. 19-23)",
+        "saving": "Saving vs today's rule",
+        "free_avoided": "Free-market kWh avoided",
+        "run_free_lime": "Estimate free lime",
+        "free_lime_now": "Estimated free lime",
+        "lab_due": "Lab result for this clinker due",
+        "run_condition": "Check equipment",
+        "run_shift": "Build shift report",
+        "n_alarm": "Alarms",
+        "n_warning": "Warnings",
+    },
+}
+for _lang, _strings in _TAB_STRINGS.items():
+    TRANSLATIONS[_lang].update(_strings)
 
 
 def t(key: str, **kwargs: Any) -> str:
@@ -319,12 +417,11 @@ def _request(
     method: str,
     url: str,
     payload: Optional[Dict[str, Any]] = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> ApiResult:
     """Perform an HTTP request and normalize the outcome into an ApiResult."""
     try:
-        response = requests.request(
-            method, url, json=payload, timeout=REQUEST_TIMEOUT_SECONDS
-        )
+        response = requests.request(method, url, json=payload, timeout=timeout)
     except requests.RequestException as exc:  # network/timeout/connection
         return ApiResult(ok=False, status_code=None, error=f"Request failed: {exc}")
 
@@ -375,56 +472,16 @@ def call_drift(base_url: str, n: int = 20) -> ApiResult:
 # --------------------------------------------------------------------------- #
 # Payload construction / parsing
 # --------------------------------------------------------------------------- #
-def build_sample_payload(
-    n_rows: int,
-    start_timestamp: datetime,
-    tags: List[str],
-    adjustable_tags: List[str],
-) -> Dict[str, Any]:
-    """Deterministically generate a synthetic request payload.
+def call_demo_window(base_url: str, rows: int, end_row: int, step: int = 1) -> ApiResult:
+    """Call ``GET /v1/demo/window`` (simulated demo plant)."""
+    return _request(
+        "GET", f"{base_url}{DEMO_PATH}?rows={rows}&end_row={end_row}&step={step}"
+    )
 
-    Parameters
-    ----------
-    n_rows:
-        Number of timestamps/samples to generate.
-    start_timestamp:
-        First timestamp; samples are spaced one minute apart.
-    tags:
-        Signal tags to synthesize (must be known to the generator).
-    adjustable_tags:
-        Tags whose latest value seeds ``current_setpoints``.
 
-    Returns
-    -------
-    dict
-        Payload with ``timestamps``, ``signals`` and ``current_setpoints``.
-    """
-    rng = np.random.default_rng(SAMPLE_SEED)
-    index = pd.date_range(start_timestamp, periods=n_rows, freq="min")
-    timestamps = [ts.isoformat() for ts in index]
-
-    signals: Dict[str, List[float]] = {}
-    steps = np.arange(n_rows)
-    for tag in tags:
-        baseline, amplitude, noise = SAMPLE_TAG_BASELINES.get(tag, (1.0, 0.1, 0.05))
-        series = (
-            baseline
-            + amplitude * np.sin(steps / 6.0)
-            + rng.normal(scale=noise, size=n_rows)
-        )
-        signals[tag] = [round(float(v), 4) for v in series]
-
-    # Seed setpoints from the latest observed value of each adjustable tag.
-    current_setpoints: Dict[str, float] = {}
-    for tag in adjustable_tags:
-        if tag in signals and signals[tag]:
-            current_setpoints[tag] = signals[tag][-1]
-
-    return {
-        "timestamps": timestamps,
-        "signals": signals,
-        "current_setpoints": current_setpoints,
-    }
+def window_only(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The ``{timestamps, signals}`` part of a demo payload."""
+    return {"timestamps": payload["timestamps"], "signals": payload["signals"]}
 
 
 def parse_json_payload(text: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
@@ -646,39 +703,6 @@ def _render_sidebar() -> str:
 
         st.divider()
         _render_drift_panel()
-        st.divider()
-        st.header(t("sample_data"))
-        n_rows = int(st.number_input(t("rows"), min_value=2, max_value=2000, value=60))
-        start_date = st.date_input(t("start_date"), value=datetime(2026, 1, 1).date())
-        tags = st.multiselect(
-            t("tags"),
-            options=list(SAMPLE_TAG_BASELINES.keys()),
-            default=DEFAULT_SAMPLE_TAGS,
-        )
-
-        col_a, col_b = st.columns(2)
-        if col_a.button(t("use_sample"), use_container_width=True):
-            if not tags:
-                st.warning(t("select_one_tag"))
-            else:
-                adjustable_default = [t_ for t_ in DEFAULT_ADJUSTABLE_TAGS if t_ in tags]
-                st.session_state["payload"] = build_sample_payload(
-                    n_rows,
-                    datetime.combine(start_date, datetime.min.time()),
-                    tags,
-                    adjustable_default or tags[:1],
-                )
-        if col_b.button(t("reset_payload"), use_container_width=True):
-            st.session_state.pop("payload", None)
-
-        if st.button(t("load_demo"), use_container_width=True):
-            st.session_state["payload"] = build_sample_payload(
-                60,
-                datetime(2026, 1, 1),
-                list(SAMPLE_TAG_BASELINES.keys()),
-                DEFAULT_ADJUSTABLE_TAGS,
-            )
-
     return base_url
 
 
@@ -698,6 +722,22 @@ def _render_input_section() -> Optional[Dict[str, Any]]:
     payload: Optional[Dict[str, Any]] = st.session_state.get("payload")
 
     if mode == "synthetic":
+        cols = st.columns(3)
+        end_row = int(cols[0].number_input(t("demo_end_row"), 60, 4032, 3450, step=12))
+        rows = int(cols[1].number_input(t("rows"), 20, 600, 60, step=10))
+        if cols[2].button(t("load_demo"), use_container_width=True):
+            result = call_demo_window(st.session_state["base_url"], rows, end_row)
+            if result.ok:
+                data = result.data
+                data["current_setpoints"] = {
+                    tag: data["signals"][tag][-1]
+                    for tag in DEFAULT_ADJUSTABLE_TAGS
+                    if tag in data["signals"]
+                }
+                st.session_state["payload"] = data
+                payload = data
+            else:
+                st.error(result.error)
         if payload is None:
             st.info(t("generate_hint"))
             return None
@@ -764,7 +804,7 @@ def _render_recommendation_panel(base_url: str, payload: Dict[str, Any]) -> None
 
     col1, col2, col3 = st.columns(3)
     desired_target = float(
-        col1.number_input(t("desired_target"), value=1380.0, step=1.0)
+        col1.number_input(t("desired_target"), value=1460.0, step=1.0)
     )
     top_k = int(col2.number_input(t("top_k"), min_value=1, max_value=50, value=3))
     default_adjustable = [
@@ -826,6 +866,210 @@ def _render_recommendation_panel(base_url: str, payload: Dict[str, Any]) -> None
 
 
 # --------------------------------------------------------------------------- #
+# Operational tabs
+# --------------------------------------------------------------------------- #
+def _demo_controls(key: str, rows: int, end_row: int, step: int = 1) -> Optional[Dict[str, Any]]:
+    """Load a demo window into ``st.session_state[key]`` and return it."""
+    cols = st.columns(2)
+    end = int(cols[0].number_input(t("demo_end_row"), 60, 4032, end_row, step=12, key=f"{key}_end"))
+    if cols[1].button(t("load_demo"), key=f"{key}_load", use_container_width=True):
+        result = call_demo_window(st.session_state["base_url"], rows, end, step)
+        if result.ok:
+            st.session_state[key] = result.data
+        else:
+            st.error(result.error)
+    data = st.session_state.get(key)
+    if data and data.get("simulated"):
+        st.caption(t("simulated_note"))
+    return data
+
+
+def _render_advisor_tab(base_url: str) -> None:
+    data = _demo_controls("advisor_window", rows=60, end_row=3450)
+    if data is None:
+        st.info(t("generate_hint"))
+        return
+    if st.button(t("run_advice"), type="primary"):
+        result = _request("POST", f"{base_url}{ADVISE_PATH}", window_only(data), LONG_TIMEOUT_SECONDS)
+        if result.ok:
+            st.session_state["advice"] = result.data
+        else:
+            st.error(result.error)
+    advice = st.session_state.get("advice")
+    if not advice:
+        return
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    status = advice["status"]
+    show = {"recommend": st.success, "keep_current": st.info}.get(status, st.warning)
+    show(f"{t('status')}: {t('status_' + status)}")
+    rows = [
+        {
+            t("lever"): lever,
+            t("current"): round(value, 2),
+            t("proposed"): round((advice.get("proposed") or {}).get(lever, value), 2),
+        }
+        for lever, value in advice["current"].items()
+    ]
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    cols = st.columns(3)
+    cols[0].metric(t("improvement"), f"{advice.get('improvement') or 0:.1f}")
+    savings = advice.get("savings") or {}
+    if savings:
+        cols[1].metric(t("savings_day"), f"{savings.get('heat_gcal_per_day', 0):.1f} Gcal")
+        cols[2].metric("Mazut", f"{savings.get('mazut_l_per_day', 0):,.0f} L")
+    outcomes = advice.get("proposed_outcomes") or advice.get("baseline_outcomes") or []
+    if outcomes:
+        st.subheader(t("outcomes"))
+        st.dataframe(
+            pd.DataFrame(outcomes)[["tag", "point", "lower", "upper", "margin", "ok"]].round(1),
+            use_container_width=True,
+            hide_index=True,
+        )
+    with st.expander(t("why"), expanded=True):
+        for line in advice.get("explanation_fa" if lang == "fa" else "explanation", []):
+            st.markdown(f"- {line}")
+
+    if status in ("recommend", "restore_limits"):
+        st.subheader(t("feedback"))
+        reasons = _request("GET", f"{base_url}{REASONS_PATH}")
+        reason_codes = list(reasons.data) if reasons.ok else ["other"]
+        with st.form("feedback_form"):
+            operator = st.text_input(t("operator"))
+            decision = st.radio(
+                t("decision"), ["accepted", "rejected", "modified"], format_func=t, horizontal=True
+            )
+            reason = st.selectbox(
+                t("reason"),
+                [None] + reason_codes,
+                format_func=lambda c: "—" if c is None else reasons.data[c][lang] if reasons.ok else c,
+            )
+            if st.form_submit_button(t("send_feedback")):
+                body = {
+                    "advice_id": advice["advice_id"],
+                    "decision": decision,
+                    "operator": operator or "unknown",
+                    "reason": reason,
+                }
+                sent = _request("POST", f"{base_url}{FEEDBACK_PATH}", body)
+                st.success(t("feedback_saved")) if sent.ok else st.error(sent.error)
+        stats = _request("GET", f"{base_url}{STATS_PATH}")
+        if stats.ok and stats.data.get("acceptance_rate") is not None:
+            st.metric(t("acceptance"), f"{100 * stats.data['acceptance_rate']:.0f}%")
+
+
+def _parse_hours(text: str) -> List[int]:
+    text = text.strip()
+    if not text:
+        return []
+    lo, _, hi = text.partition("-")
+    return list(range(int(lo), int(hi or lo)))
+
+
+def _render_mill_tab(base_url: str) -> None:
+    cols = st.columns(4)
+    horizon = int(cols[0].number_input(t("hours"), 12, 168, 48, step=12))
+    grid = float(cols[1].number_input(t("grid_price"), 0.0, value=700.0))
+    peak = float(cols[2].number_input(t("peak_price"), 0.0, value=1500.0))
+    free = float(cols[3].number_input(t("free_price"), 0.0, value=4000.0))
+    blocked = _parse_hours(st.text_input(t("no_quota_hours"), "19-23"))
+    if not st.button(t("run_schedule"), type="primary"):
+        return
+    hours = [h % 24 for h in range(horizon)]
+    payload = {
+        "mills": [
+            {"name": "Mill 1", "rated_kw": 4500, "rated_tph": 105, "start_cost": 200000},
+            {"name": "Mill 2", "rated_kw": 4600, "rated_tph": 96, "start_cost": 200000},
+        ],
+        "slot_hours": 1,
+        "quota_kw": [0 if h in blocked else 9500 for h in hours],
+        "grid_price": [peak if 17 <= h < 23 else grid for h in hours],
+        "free_market_price": [free] * horizon,
+        "free_market_cap_kw": [4600] * horizon,
+        "dispatch_tph": [170 if 7 <= h < 19 else 40 for h in hours],
+        "silo_initial_t": 6000,
+        "silo_min_t": 2000,
+        "silo_max_t": 12000,
+        "baseline_start_below": [0.55, 0.45],
+        "baseline_stop_above": [0.7, 0.65],
+    }
+    result = _request("POST", f"{base_url}{MILL_PATH}", payload, LONG_TIMEOUT_SECONDS)
+    if not result.ok:
+        st.error(result.error)
+        return
+    comparison = result.data["comparison"]
+    cols = st.columns(2)
+    cols[0].metric(t("saving"), f"{comparison['cost_saving_pct']:.1f}%")
+    cols[1].metric(t("free_avoided"), f"{comparison['free_market_kwh_avoided']:,.0f}")
+    slots = pd.DataFrame(result.data["optimized"]["slots"])
+    st.bar_chart(slots[["Mill 1", "Mill 2"]])
+    st.line_chart(slots[["silo_t"]])
+
+
+def _render_quality_tab(base_url: str) -> None:
+    data = _demo_controls("quality_window", rows=72, end_row=3600)
+    if data is None or not st.button(t("run_free_lime"), type="primary"):
+        return
+    result = _request("POST", f"{base_url}{FREE_LIME_PATH}", window_only(data), LONG_TIMEOUT_SECONDS)
+    if not result.ok:
+        st.error(result.error)
+        return
+    body = result.data
+    cols = st.columns(2)
+    cols[0].metric(
+        t("free_lime_now"),
+        f"{body['free_lime_pct']:.2f} %",
+        help=f"90%: {body['lower']:.2f}–{body['upper']:.2f}",
+    )
+    cols[1].metric(t("lab_due"), body["lab_due_at"].replace("T", " ")[:16])
+    series = pd.DataFrame(body["series"]).set_index("timestamp")
+    st.line_chart(series)
+
+
+def _render_equipment_tab(base_url: str) -> None:
+    data = _demo_controls("equipment_window", rows=1344, end_row=4032, step=3)
+    if data is None or not st.button(t("run_condition"), type="primary"):
+        return
+    body = {"window": window_only(data), "reference_end": data["timestamps"][len(data["timestamps"]) // 2]}
+    result = _request("POST", f"{base_url}{CONDITION_PATH}", body, LONG_TIMEOUT_SECONDS)
+    if not result.ok:
+        st.error(result.error)
+        return
+    cols = st.columns(2)
+    cols[0].metric(t("n_alarm"), result.data["n_alarm"])
+    cols[1].metric(t("n_warning"), result.data["n_warning"])
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    for finding in result.data["findings"]:
+        if finding["severity"] == "ok":
+            continue
+        text = finding["message_fa"] if lang == "fa" else finding["message"]
+        (st.error if finding["severity"] == "alarm" else st.warning)(text)
+
+
+def _render_shift_tab(base_url: str) -> None:
+    data = _demo_controls("shift_window", rows=120, end_row=1600)
+    if data is None or not st.button(t("run_shift"), type="primary"):
+        return
+    body = {"window": window_only(data), "lab": data.get("lab"), "at": data["timestamps"][-30]}
+    result = _request("POST", f"{base_url}{SHIFT_PATH}", body, LONG_TIMEOUT_SECONDS)
+    if not result.ok:
+        st.error(result.error)
+        return
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    st.markdown(result.data["report_fa" if lang == "fa" else "report_en"])
+
+
+def _render_model_lab_tab(base_url: str) -> None:
+    payload = _render_input_section()
+    if payload is None:
+        return
+    left, right = st.columns(2)
+    with left:
+        _render_prediction_panel(base_url, payload)
+    with right:
+        _render_recommendation_panel(base_url, payload)
+
+
+# --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
 def main() -> None:
@@ -845,16 +1089,22 @@ def main() -> None:
         st.markdown(t("checklist_body"))
 
     base_url = _render_sidebar()
-    payload = _render_input_section()
+    st.session_state["base_url"] = base_url
 
-    if payload is None:
-        st.stop()
-
-    left, right = st.columns(2)
-    with left:
-        _render_prediction_panel(base_url, payload)
-    with right:
-        _render_recommendation_panel(base_url, payload)
+    tabs = st.tabs(
+        [t("tab_advisor"), t("tab_mills"), t("tab_quality"), t("tab_equipment"), t("tab_shift"), t("tab_lab")]
+    )
+    renderers = (
+        _render_advisor_tab,
+        _render_mill_tab,
+        _render_quality_tab,
+        _render_equipment_tab,
+        _render_shift_tab,
+        _render_model_lab_tab,
+    )
+    for tab, render in zip(tabs, renderers):
+        with tab:
+            render(base_url)
 
 
 if __name__ == "__main__":

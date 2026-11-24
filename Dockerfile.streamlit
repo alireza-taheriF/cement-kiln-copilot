@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN pip install --no-cache-dir streamlit requests numpy pandas
 
-COPY src/dashboard/app_streamlit.py /app/src/dashboard/app_streamlit.py
+COPY src/dashboard /app/src/dashboard
 
 EXPOSE 8501
 

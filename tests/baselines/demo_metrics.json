@@ -1,9 +1,9 @@
 {
   "metric": "valid_rmse",
-  "value": 2.3600270120946925,
-  "tolerance": 0.15,
+  "value": 5.169205648958236,
+  "tolerance": 0.05,
   "tolerance_type": "relative",
   "direction": "lower_is_better",
-  "dataset": "data/demo_signals.csv",
+  "dataset": "src.sim.plant (14 days, seed 7)",
   "config": "config/model_config.yaml"
 }

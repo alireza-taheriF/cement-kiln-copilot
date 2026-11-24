@@ -13,7 +13,7 @@ from mlflow.tracking import MlflowClient
 
 import src.api.routers.prediction as prediction_module
 from src.api.main import app
-from src.data_ingest.loader import load_signals_from_csv, save_signals_to_db
+from src.data_ingest.loader import save_signals_to_db
 from src.db.models import InferenceEvent, get_engine, get_session_factory, init_db
 from src.ml.check_baseline import is_regression, main as check_baseline_main
 from src.ml.feature_stats import feature_stats_path
@@ -112,19 +112,11 @@ def test_metrics_endpoint_returns_200():
     assert 'le="+Inf"' in body
 
 
-def _demo_window(n_rows: int = 40) -> dict:
-    frame = pd.read_csv(REPO_ROOT / "data" / "demo_signals.csv")
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"])
-    wide = (
-        frame.pivot_table(
-            index="timestamp",
-            columns="tag_name",
-            values="value",
-            aggfunc="last",
-        )
-        .sort_index()
-        .tail(n_rows)
-    )
+def _demo_window(n_rows: int = 60) -> dict:
+    from src.sim.plant import SimConfig, simulate
+
+    wide = simulate(SimConfig(days=2)).to_long(include_derived=False)
+    wide = wide.pivot(index="timestamp", columns="tag_name", values="value").sort_index().tail(n_rows)
     return {
         "timestamps": [ts.isoformat() for ts in wide.index],
         "signals": {column: wide[column].astype(float).tolist() for column in wide.columns},
@@ -132,10 +124,11 @@ def _demo_window(n_rows: int = 40) -> dict:
 
 
 def test_drift_endpoint_returns_number_for_demo_window(tmp_path, monkeypatch):
-    csv_path = REPO_ROOT / "data" / "demo_signals.csv"
+    from src.sim.plant import SimConfig, simulate
+
     session = _session()
     try:
-        save_signals_to_db(load_signals_from_csv(str(csv_path)), session)
+        save_signals_to_db(simulate(SimConfig(days=2)).to_long(include_derived=False), session)
         model_path = tmp_path / "demo.joblib"
         config = load_training_config(str(REPO_ROOT / "config" / "model_config.yaml"))
         config["model_output_path"] = str(model_path)
@@ -143,7 +136,7 @@ def test_drift_endpoint_returns_number_for_demo_window(tmp_path, monkeypatch):
             session,
             target_tag=config["target_tag"],
             input_tags=list(config["input_tags"]),
-            lags=list(config["lags"]),
+            lags=config["lags"],
             rolling_windows=list(config["rolling_windows"]),
             horizon=int(config["horizon"]),
             model_output_path=str(model_path),

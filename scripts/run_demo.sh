@@ -19,7 +19,7 @@ source "${SCRIPT_DIR}/_lib.sh"
 # falls back to local SQLite, and the (PostgreSQL) DATABASE_URL in .env does not
 # force the demo onto a database server that may not be running.
 export DATABASE_URL="${DATABASE_URL:-sqlite:///./cement_copilot_dev.db}"
-export MODEL_PATH="${MODEL_PATH:-artifacts/models/kiln_zone1_temp_model.joblib}"
+export MODEL_PATH="${MODEL_PATH:-artifacts/models/bz_temp_model.joblib}"
 export API_BASE_URL="${API_BASE_URL:-http://localhost:8000}"
 
 # Load remaining .env values WITHOUT overriding anything already set above.

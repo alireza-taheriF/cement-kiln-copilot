@@ -115,6 +115,12 @@ def load_lab_from_csv(path: str) -> pd.DataFrame:
     return out
 
 
+def _naive(ts) -> pd.Timestamp:
+    """Timezone-naive timestamp for key comparison (SQLite drops tz info)."""
+    stamp = pd.Timestamp(ts)
+    return stamp.tz_convert("UTC").tz_localize(None) if stamp.tzinfo else stamp
+
+
 # ---------------------------------------------------------------------------
 # Database persisters
 # ---------------------------------------------------------------------------
@@ -150,7 +156,7 @@ def _get_or_create_tag_ids(
     return name_to_id
 
 
-def save_signals_to_db(df: pd.DataFrame, session: Session) -> int:
+def save_signals_to_db(df: pd.DataFrame, session: Session, skip_existing: bool = False) -> int:
     """Persist a long-format signal DataFrame into the ``signals`` table.
 
     Behavior:
@@ -164,6 +170,10 @@ def save_signals_to_db(df: pd.DataFrame, session: Session) -> int:
         DataFrame with columns ``timestamp``, ``tag_name``, ``value``.
     session:
         An active SQLAlchemy session. The function flushes/commits within it.
+    skip_existing:
+        Skip ``(timestamp, tag)`` pairs already stored, so incremental syncs
+        over overlapping windows are idempotent instead of failing on the
+        primary key.
 
     Returns
     -------
@@ -188,6 +198,18 @@ def save_signals_to_db(df: pd.DataFrame, session: Session) -> int:
             timestamps, df["tag_name"], df["value"]
         )
     ]
+
+    if skip_existing and mappings:
+        tag_ids = sorted({m["tag_id"] for m in mappings})
+        lo = min(m["ts"] for m in mappings)
+        hi = max(m["ts"] for m in mappings)
+        existing = {
+            (_naive(ts), tag_id)
+            for ts, tag_id in session.query(Signal.ts, Signal.tag_id)
+            .filter(Signal.tag_id.in_(tag_ids), Signal.ts >= lo, Signal.ts <= hi)
+            .all()
+        }
+        mappings = [m for m in mappings if (_naive(m["ts"]), m["tag_id"]) not in existing]
 
     session.bulk_insert_mappings(Signal, mappings)
     session.commit()

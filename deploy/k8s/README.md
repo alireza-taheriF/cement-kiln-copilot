@@ -62,5 +62,5 @@ Optional tracking UI: `kubectl port-forward svc/cement-copilot-mlflow 5000:5000`
 The API reads `MODEL_PATH` and `DATABASE_URL` from the ConfigMap and Secret.
 `/health` is the readiness and liveness probe. The dashboard's `API_BASE_URL`
 is `http://cement-copilot-api:8000`. Mount a trained `joblib` file at
-`/models/kiln_zone1_temp_model.joblib` before expecting predictions; the sample
+`/app/artifacts/models/` (bz_temp_model.joblib, co/co_model.joblib, free_lime_softsensor.joblib) before expecting predictions; the sample
 volume is an emptyDir.

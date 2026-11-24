@@ -18,7 +18,7 @@ load_env_file .env
 
 API_HOST="${API_HOST:-0.0.0.0}"
 API_PORT="${API_PORT:-8000}"
-export MODEL_PATH="${MODEL_PATH:-artifacts/models/kiln_zone1_temp_model.joblib}"
+export MODEL_PATH="${MODEL_PATH:-artifacts/models/bz_temp_model.joblib}"
 
 if [[ ! -f "${MODEL_PATH}" ]]; then
   echo "[run_backend] ERROR: model artifact not found at MODEL_PATH=${MODEL_PATH}" >&2

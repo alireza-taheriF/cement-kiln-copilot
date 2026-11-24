@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Train a demo model end-to-end on the bundled demo dataset.
+# Train every demo model end-to-end on the simulated plant.
 #
 # Steps:
-#   1. seed data/demo_signals.csv into the database (fresh tables),
-#   2. train the model defined in config/model_config.yaml,
-#   3. print clear next steps.
+#   1. simulate 14 days of a 3,000 t/d line and seed it into the database,
+#   2. train the burning-zone temperature model (config/model_config.yaml),
+#   3. train the CO model (config/models/co.yaml),
+#   4. train the free-lime soft sensor from the lab results.
 #
 # Usage: ./scripts/train_demo_model.sh
 set -euo pipefail
@@ -16,55 +17,32 @@ cd "${REPO_ROOT}"
 # shellcheck source=scripts/_lib.sh
 source "${SCRIPT_DIR}/_lib.sh"
 
-# Demo default: use a local SQLite DB unless DATABASE_URL is explicitly
-# exported. This is set BEFORE loading .env so the (PostgreSQL) DATABASE_URL in
-# .env does not force the demo onto a database server that may not be running.
+# Demo default: local SQLite unless DATABASE_URL is explicitly exported. Set
+# BEFORE loading .env so its PostgreSQL URL does not force a server.
 export DATABASE_URL="${DATABASE_URL:-sqlite:///./cement_copilot_dev.db}"
-
-# Load remaining .env values WITHOUT overriding anything already set above.
 load_env_file .env
 
-CONFIG_PATH="config/model_config.yaml"
-export DEMO_CSV="${DEMO_CSV:-data/demo_signals.csv}"
-
-if [[ ! -f "${DEMO_CSV}" ]]; then
-  echo "[train_demo_model] ERROR: demo dataset not found at ${DEMO_CSV}" >&2
-  exit 1
-fi
+DEMO_DIR="${DEMO_DIR:-data/demo}"
+DEMO_DAYS="${DEMO_DAYS:-14}"
 
 echo "[train_demo_model] Database: ${DATABASE_URL}"
-echo "[train_demo_model] Seeding demo signals from ${DEMO_CSV} ..."
-python - <<'PY'
-import os
+echo "[train_demo_model] Simulating ${DEMO_DAYS} days into ${DEMO_DIR} and seeding the database ..."
+python -m src.sim.generate --out "${DEMO_DIR}" --days "${DEMO_DAYS}" --seed-db
 
-from src.data_ingest.loader import load_signals_from_csv, save_signals_to_db
-from src.db.models import Base, get_engine, get_session_factory
+echo "[train_demo_model] Training the burning-zone model (config/model_config.yaml) ..."
+python -m src.ml.train --config config/model_config.yaml
 
-csv_path = os.environ["DEMO_CSV"]
-engine = get_engine()
+echo "[train_demo_model] Training the CO model (config/models/co.yaml) ..."
+python -m src.ml.train --config config/models/co.yaml
 
-# Fresh tables so re-running the demo is idempotent.
-Base.metadata.drop_all(engine)
-Base.metadata.create_all(engine)
+echo "[train_demo_model] Training the free-lime soft sensor ..."
+python -m src.softsensor.train
 
-session = get_session_factory(engine)()
-try:
-    df = load_signals_from_csv(csv_path)
-    n = save_signals_to_db(df, session)
-    print(f"[train_demo_model] Seeded {n} signal rows.")
-finally:
-    session.close()
-PY
+cat <<MSG
 
-echo "[train_demo_model] Training model with ${CONFIG_PATH} ..."
-echo "[train_demo_model] MLflow file store: ${MLFLOW_TRACKING_URI:-./mlruns} (registry model: cement-kiln-kpi)"
-python -m src.ml.train --config "${CONFIG_PATH}"
+[train_demo_model] Done. Artifacts in artifacts/models/.
 
-MODEL_PATH_DEFAULT="artifacts/models/kiln_zone1_temp_model.joblib"
-echo ""
-echo "[train_demo_model] Done. Model artifact written to: ${MODEL_PATH_DEFAULT}"
-echo ""
-echo "Next steps:"
-echo "  1) export MODEL_PATH=${MODEL_PATH_DEFAULT}"
-echo "  2) ./scripts/run_backend.sh        # start the API"
-echo "  3) ./scripts/run_dashboard.sh      # start the dashboard (new terminal)"
+Next steps:
+  1) ./scripts/run_backend.sh        # start the API
+  2) ./scripts/run_dashboard.sh      # start the dashboard (new terminal)
+MSG
